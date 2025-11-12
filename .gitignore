@@ -1,0 +1,34 @@
+# Build outputs
+bin/
+obj/
+
+# Dependency directories
+node_modules/
+
+# Logs
+*.log
+
+# Runtime data
+pids
+*.pid
+*.seed
+
+# IDE files
+.vs/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Package files
+*.exe
+package-lock.json
+yarn.lock

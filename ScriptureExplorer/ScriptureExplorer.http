@@ -1,0 +1,6 @@
+@ScriptureExplorer_HostAddress = http://localhost:5106
+
+GET {{ScriptureExplorer_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
