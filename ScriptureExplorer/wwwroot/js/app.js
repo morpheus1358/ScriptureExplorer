@@ -380,13 +380,8 @@ async function showVerseRange(bookName, chapterNumber, verseRange) {
 
     const verses = await response.json();
 
-    if (verseRange.includes('-') || verseRange.includes(',')) {
-      // It's a range - show as context view
-      displayResults(verses, `${bookName} ${chapterNumber}:${verseRange}`);
-    } else {
-      // It's a single verse - show with context
-      await showVerseContext(bookName, chapterNumber, parseInt(verseRange));
-    }
+    // It's a single verse - show with context
+    displayResults(verses, `${bookName} ${chapterNumber}:${verseRange}`);
   } catch (error) {
     showError(`Ayet aralığı getirilemedi: ${error.message}`);
   }
