@@ -112,7 +112,12 @@ namespace ScriptureExplorer.Services
 
         private string CleanText(string text)
         {
-            return text.Trim().Trim('"').Replace("\"\"", "\"");
+            return text.Trim()
+                       .Trim('"')
+                       .Replace("\"\"", "\"")
+                       .Replace("\\\"", "\"")
+                       .Replace("“", "\"")
+                       .Replace("”", "\"");
         }
 
         private async Task ClearExistingDataAsync()
