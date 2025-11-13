@@ -140,7 +140,7 @@ namespace ScriptureExplorer.Services
 
             foreach (var bookGroup in bookGroups)
             {
-                // Create Book
+                // Kitap yarat
                 var book = new Book
                 {
                     BookNumber = bookGroup.Key.BookNumber,

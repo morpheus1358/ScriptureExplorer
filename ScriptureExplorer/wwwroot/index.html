@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ScriptureExplorer - Türkçe Kutsal Kitap</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>📖 ScriptureExplorer</h1>
+            <p>Türkçe Kutsal Kitap Arama ve Keşif Platformu</p>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="search-box">
+            <h2>Kutsal Kitap'ta Ara</h2>
+            
+            <div class="quick-links">
+                <button class="quick-link" onclick="search('tanrı')">Tanrı</button>
+                <button class="quick-link" onclick="search('isa')">İsa</button>
+                <button class="quick-link" onclick="search('sevgi')">Sevgi</button>
+                <button class="quick-link" onclick="search('iman')">İman</button>
+                <button class="quick-link" onclick="search('Yuhanna 3:16')">Yuhanna 3:16</button>
+                <button class="quick-link" onclick="search('Matta 1')">Matta 1</button>
+            </div>
+
+            <div class="input-group">
+                <input type="text" id="searchInput" 
+                       placeholder="Kelime ara veya ayet referansı (örn: Yaratılış 1:1 veya tanrı)">
+                <button class="btn btn-primary" onclick="performSearch()">Ara</button>
+                <button class="btn btn-secondary" onclick="getRandomVerse()">Rastgele Ayet</button>
+            </div>
+        </div>
+
+        <div id="results"></div>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
