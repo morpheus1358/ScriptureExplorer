@@ -20,12 +20,8 @@ builder.Services.AddScoped<IBibleImportService, BibleImportService>();
 
 var app = builder.Build();
 
-// Configure pipeline
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+app.UseDefaultFiles(); // INDEX HTML AS DEFAULT
+app.UseStaticFiles();
 
 app.UseHttpsRedirection();
 app.UseAuthorization();

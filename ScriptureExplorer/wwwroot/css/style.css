@@ -292,3 +292,116 @@ input[type="text"]:focus {
 .verse {
     animation: fadeIn 0.5s ease-out;
 }
+
+/* Chapter View Styles */
+.chapter-header, .context-header {
+    background: rgba(255, 255, 255, 0.95);
+    padding: 1.5rem;
+    border-radius: 12px;
+    margin-bottom: 1rem;
+    display: flex;
+    justify-content: between;
+    align-items: center;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
+.chapter-header h2, .context-header h2 {
+    color: #2c3e50;
+    margin: 0;
+    flex: 1;
+}
+
+.chapter-content, .context-content {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 12px;
+    padding: 2rem;
+    line-height: 1.8;
+}
+
+/* Verse in Chapter View */
+.verse-in-chapter, .verse-in-context {
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+}
+
+.verse-in-chapter:hover, .verse-in-context:hover {
+    background: rgba(52, 152, 219, 0.1);
+}
+
+.verse-number {
+    background: #3498db;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: bold;
+    margin-right: 10px;
+    min-width: 30px;
+    display: inline-block;
+    text-align: center;
+}
+
+.verse-text {
+    font-size: 1.1rem;
+    color: #333;
+}
+
+/* Highlighted verse in context view */
+.highlighted-verse {
+    background: linear-gradient(45deg, #ffeaa7, #fab1a0) !important;
+    border-left: 4px solid #e17055;
+    padding: 1.5rem !important;
+    transform: scale(1.02);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+}
+
+/* Reading experience improvements */
+.chapter-content {
+    font-size: 1.2rem;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.context-content {
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+/* Back button styles */
+.back-button {
+    background: #95a5a6;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+}
+
+.back-button:hover {
+    background: #7f8c8d;
+}
+
+/* Responsive chapter view */
+@media (max-width: 768px) {
+    .chapter-header, .context-header {
+        flex-direction: column;
+        text-align: center;
+    }
+    
+    .chapter-header h2, .context-header h2 {
+        margin-bottom: 1rem;
+    }
+    
+    .verse-in-chapter, .verse-in-context {
+        padding: 0.5rem;
+    }
+    
+    .verse-text {
+        font-size: 1rem;
+    }
+}

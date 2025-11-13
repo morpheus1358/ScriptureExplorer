@@ -67,6 +67,27 @@ async function search(query) {
   showLoading('Aranıyor...');
 
   try {
+    // 🆕 FIRST: Check if it's a chapter reference (e.g., "Yuhanna 17")
+    const chapterRef = tryParseChapterReference(query);
+    if (chapterRef.isChapter) {
+      // It's a chapter reference - show the entire chapter directly
+      await showChapter(chapterRef.bookName, chapterRef.chapter);
+      return;
+    }
+
+    // 🆕 SECOND: Check if it's a verse reference (e.g., "Yuhanna 17:1")
+    const verseRef = tryParseVerseReference(query);
+    if (verseRef.isVerse) {
+      // It's a verse reference - show the verse range
+      await showVerseRange(
+        verseRef.bookName,
+        verseRef.chapter,
+        verseRef.verseRange
+      );
+      return;
+    }
+
+    // If no reference detected, do regular text search
     const response = await fetch(
       `${API_BASE}/search?q=${encodeURIComponent(query)}`
     );
@@ -85,6 +106,297 @@ async function search(query) {
   } catch (error) {
     console.error('Search error:', error);
     showError(`Arama sırasında hata oluştu: ${error.message}`);
+  }
+}
+
+// 🆕 SMART BOOK NAME MATCHING WITH VARIATIONS
+function normalizeBookName(bookName) {
+  return bookName
+    .toLowerCase()
+    .replace(/'/g, '') // Remove apostrophes
+    .replace(/\./g, '') // Remove dots
+    .replace(/\s+/g, ' ') // Normalize spaces
+    .replace(/[^a-zğüşıöç\s]/g, '') // Remove other special chars
+    .trim();
+}
+
+// 🆕 SMART BOOK NAME MATCHING WITH VARIATIONS
+function normalizeBookName(bookName) {
+  return bookName
+    .toLowerCase()
+    .replace(/'/g, '') // Remove apostrophes
+    .replace(/\./g, '') // Remove dots
+    .replace(/\s+/g, ' ') // Normalize spaces
+    .replace(/[^a-zğüşıöç\s]/g, '') // Remove other special chars
+    .trim();
+}
+
+function tryParseChapterReference(input) {
+  const trimmed = input.trim();
+  console.log('Parsing chapter reference:', trimmed);
+
+  // Actual book names from your API (with variations)
+  const availableBooks = [
+    'Yaratılış',
+    "Mısır'dan Çıkış",
+    'Levililer',
+    'Çölde Sayım',
+    "Yasa'nın Tekrarı",
+    'Yeşu',
+    'Hakimler',
+    'Rut',
+    '1 Samuel',
+    '2 Samuel',
+    '1. Krallar',
+    '2. Krallar',
+    '1. Tarihler',
+    '2. Tarihler',
+    'Ezra',
+    'Nehemya',
+    'Ester',
+    'Eyüp',
+    'Mezmurlar',
+    "Süleyman'ın Özdeyişleri",
+    'Vaiz',
+    'Ezgiler Ezgisi',
+    'Yeşaya',
+    'Yeremya',
+    'Ağıtlar',
+    'Hezekiel',
+    'Daniel',
+    'Hoşea',
+    'Yoel',
+    'Amos',
+    'Yunus',
+    'Mika',
+    'Nahum',
+    'Habakkuk',
+    'Sefanya',
+    'Hagay',
+    'Zekeriya',
+    'Malaki',
+    'Matta',
+    'Markos',
+    'Luka',
+    'Yuhanna',
+    'Resullerin',
+    'Romalılara',
+    '1 Korintoslulara',
+    '2 Korintoslulara',
+    'Galatyalılara',
+    'Efeslilere',
+    'Filipililere',
+    'Koloselilere',
+    '1 Selaniklilere',
+    '2 Selaniklilere',
+    '1 Timoteosa',
+    '2 Timoteosa',
+    'Titusa',
+    'Filimona',
+    'İbranilere',
+    "Yakub'un",
+    "1 Petrus'un",
+    "2 Petrus'un",
+    "1 Yuhanna'nın",
+    "2 Yuhanna'nın",
+    "3 Yuhanna'nın",
+    "Yahuda'nın",
+    'Vahiy',
+  ];
+
+  // Pattern: "BookName Number" (e.g., "Çölde Sayım 12")
+  const pattern = /^([a-zA-ZĞÜŞİÖÇğüşiöç\s\d\.']+)\s+(\d+)$/i;
+  const match = trimmed.match(pattern);
+
+  if (match) {
+    const inputBookName = match[1].trim();
+    const normalizedInput = normalizeBookName(inputBookName);
+    console.log(
+      'Input book name:',
+      inputBookName,
+      'Normalized:',
+      normalizedInput
+    );
+
+    // Find the best matching book name
+    const matchedBook = availableBooks.find((book) => {
+      const normalizedBook = normalizeBookName(book);
+      console.log('Comparing:', normalizedInput, 'vs', normalizedBook);
+      return normalizedBook === normalizedInput;
+    });
+
+    if (matchedBook) {
+      console.log('✅ Exact match found:', matchedBook);
+      return {
+        isChapter: true,
+        bookName: matchedBook, // Use the EXACT book name from database
+        chapter: parseInt(match[2]),
+      };
+    } else {
+      console.log('❌ No exact match, trying partial...');
+      // Try partial matching for cases like "1 Krallar" vs "1. Krallar"
+      const partialMatch = availableBooks.find((book) => {
+        const normalizedBook = normalizeBookName(book);
+        return (
+          normalizedBook.includes(normalizedInput) ||
+          normalizedInput.includes(normalizedBook)
+        );
+      });
+
+      if (partialMatch) {
+        console.log('✅ Partial match found:', partialMatch);
+        return {
+          isChapter: true,
+          bookName: partialMatch,
+          chapter: parseInt(match[2]),
+        };
+      }
+    }
+  }
+
+  console.log('❌ Not a chapter reference');
+  return { isChapter: false, bookName: '', chapter: 0 };
+}
+
+// 🆕 SIMILAR FIX FOR VERSE REFERENCES
+function tryParseVerseReference(input) {
+  const trimmed = input.trim();
+  console.log('Parsing verse reference:', trimmed);
+
+  const availableBooks = [
+    'Yaratılış',
+    "Mısır'dan Çıkış",
+    'Levililer',
+    'Çölde Sayım',
+    "Yasa'nın Tekrarı",
+    'Yeşu',
+    'Hakimler',
+    'Rut',
+    '1 Samuel',
+    '2 Samuel',
+    '1. Krallar',
+    '2. Krallar',
+    '1. Tarihler',
+    '2. Tarihler',
+    'Ezra',
+    'Nehemya',
+    'Ester',
+    'Eyüp',
+    'Mezmurlar',
+    "Süleyman'ın Özdeyişleri",
+    'Vaiz',
+    'Ezgiler Ezgisi',
+    'Yeşaya',
+    'Yeremya',
+    'Ağıtlar',
+    'Hezekiel',
+    'Daniel',
+    'Hoşea',
+    'Yoel',
+    'Amos',
+    'Yunus',
+    'Mika',
+    'Nahum',
+    'Habakkuk',
+    'Sefanya',
+    'Hagay',
+    'Zekeriya',
+    'Malaki',
+    'Matta',
+    'Markos',
+    'Luka',
+    'Yuhanna',
+    'Resullerin',
+    'Romalılara',
+    '1 Korintoslulara',
+    '2 Korintoslulara',
+    'Galatyalılara',
+    'Efeslilere',
+    'Filipililere',
+    'Koloselilere',
+    '1 Selaniklilere',
+    '2 Selaniklilere',
+    '1 Timoteosa',
+    '2 Timoteosa',
+    'Titusa',
+    'Filimona',
+    'İbranilere',
+    "Yakub'un",
+    "1 Petrus'un",
+    "2 Petrus'un",
+    "1 Yuhanna'nın",
+    "2 Yuhanna'nın",
+    "3 Yuhanna'nın",
+    "Yahuda'nın",
+    'Vahiy',
+  ];
+
+  // Pattern: "BookName Number:NumberRange" (e.g., "Çölde Sayım 12:1")
+  const pattern = /^([a-zA-ZĞÜŞİÖÇğüşiöç\s\d\.']+)\s+(\d+):([\d\-,]+)$/i;
+  const match = trimmed.match(pattern);
+
+  if (match) {
+    const inputBookName = match[1].trim();
+    const normalizedInput = normalizeBookName(inputBookName);
+
+    // Find the best matching book name
+    const matchedBook = availableBooks.find(
+      (book) => normalizeBookName(book) === normalizedInput
+    );
+
+    if (matchedBook) {
+      return {
+        isVerse: true,
+        bookName: matchedBook,
+        chapter: parseInt(match[2]),
+        verseRange: match[3],
+      };
+    } else {
+      // Try partial matching
+      const partialMatch = availableBooks.find((book) => {
+        const normalizedBook = normalizeBookName(book);
+        return (
+          normalizedBook.includes(normalizedInput) ||
+          normalizedInput.includes(normalizedBook)
+        );
+      });
+
+      if (partialMatch) {
+        return {
+          isVerse: true,
+          bookName: partialMatch,
+          chapter: parseInt(match[2]),
+          verseRange: match[3],
+        };
+      }
+    }
+  }
+
+  return { isVerse: false, bookName: '', chapter: 0, verseRange: '' };
+}
+
+// 🆕 VERSE RANGE FUNCTION (for references like "Yuhanna 17:1-5")
+async function showVerseRange(bookName, chapterNumber, verseRange) {
+  showLoading(`${bookName} ${chapterNumber}:${verseRange} yükleniyor...`);
+
+  try {
+    const response = await fetch(
+      `${API_BASE}/${bookName}/${chapterNumber}/${verseRange}`
+    );
+
+    if (!response.ok) throw new Error('Ayet aralığı getirilemedi');
+
+    const verses = await response.json();
+
+    if (verseRange.includes('-') || verseRange.includes(',')) {
+      // It's a range - show as context view
+      displayResults(verses, `${bookName} ${chapterNumber}:${verseRange}`);
+    } else {
+      // It's a single verse - show with context
+      await showVerseContext(bookName, chapterNumber, parseInt(verseRange));
+    }
+  } catch (error) {
+    showError(`Ayet aralığı getirilemedi: ${error.message}`);
   }
 }
 
@@ -123,7 +435,7 @@ function displayResults(verses, title) {
   });
 }
 
-// Create individual verse element
+// individual verse create
 function createVerseElement(verse) {
   const verseElement = document.createElement('div');
   verseElement.className = 'verse';
@@ -137,20 +449,20 @@ function createVerseElement(verse) {
                     onclick="showChapter('${escapeHtml(verse.bookName)}', ${
     verse.chapterNumber
   })">
-                📚 Tüm Bölüm
+                📚 Tüm Bölümü Oku
             </button>
             <button class="btn-small btn-warning" 
                     onclick="showVerseContext('${escapeHtml(
                       verse.bookName
                     )}', ${verse.chapterNumber}, ${verse.verseNumber})">
-                🔍 Bağlamı Gör
+                🔍 Bağlamında Gör
             </button>
         </div>
     `;
   return verseElement;
 }
 
-// Navigation functions
+// Show entire chapter as reading view
 async function showChapter(bookName, chapterNumber) {
   showLoading(`${bookName} ${chapterNumber}. bölüm yükleniyor...`);
 
@@ -160,31 +472,92 @@ async function showChapter(bookName, chapterNumber) {
     if (!response.ok) throw new Error('Bölüm getirilemedi');
 
     const verses = await response.json();
-    displayResults(verses, `${bookName} ${chapterNumber}. Bölüm`);
+    displayChapterView(verses, bookName, chapterNumber);
   } catch (error) {
     showError(`Bölüm getirilemedi: ${error.message}`);
   }
 }
 
+// Show verse with context (surrounding verses)
 async function showVerseContext(bookName, chapterNumber, verseNumber) {
-  const start = Math.max(1, parseInt(verseNumber) - 3);
-  const end = parseInt(verseNumber) + 3;
-  const range = `${start}-${end}`;
-
   showLoading('Ayet bağlamı yükleniyor...');
 
   try {
-    const response = await fetch(
-      `${API_BASE}/${bookName}/${chapterNumber}/${range}`
-    );
+    // Get the entire chapter
+    const response = await fetch(`${API_BASE}/${bookName}/${chapterNumber}`);
 
     if (!response.ok) throw new Error('Ayet bağlamı getirilemedi');
 
-    const verses = await response.json();
-    displayResults(verses, `${bookName} ${chapterNumber}:${range}`);
+    const allVerses = await response.json();
+    displayContextView(
+      allVerses,
+      bookName,
+      chapterNumber,
+      parseInt(verseNumber)
+    );
   } catch (error) {
     showError(`Ayet bağlamı getirilemedi: ${error.message}`);
   }
+}
+
+// Display entire chapter as reading view
+function displayChapterView(verses, bookName, chapterNumber) {
+  resultsDiv.innerHTML = `
+        <div class="chapter-header">
+            <h2>${bookName} ${chapterNumber}. Bölüm</h2>
+            <button class="btn btn-primary" onclick="loadInitialContent()">← Arama'ya Dön</button>
+        </div>
+        <div class="chapter-content">
+            ${verses
+              .map(
+                (verse) => `
+                <div class="verse-in-chapter" id="verse-${verse.verseNumber}">
+                    <span class="verse-number">${verse.verseNumber}</span>
+                    <span class="verse-text">${escapeHtml(verse.text)}</span>
+                </div>
+            `
+              )
+              .join('')}
+        </div>
+    `;
+}
+
+// Display verse with highlighted context
+function displayContextView(verses, bookName, chapterNumber, targetVerse) {
+  resultsDiv.innerHTML = `
+        <div class="context-header">
+            <h2>${bookName} ${chapterNumber}:${targetVerse} - Bağlam</h2>
+            <button class="btn btn-primary" onclick="loadInitialContent()">← Arama'ya Dön</button>
+            <button class="btn btn-secondary" onclick="showChapter('${escapeHtml(
+              bookName
+            )}', ${chapterNumber})">
+                Tüm Bölümü Oku
+            </button>
+        </div>
+        <div class="context-content">
+            ${verses
+              .map(
+                (verse) => `
+                <div class="verse-in-context ${
+                  verse.verseNumber === targetVerse ? 'highlighted-verse' : ''
+                }" 
+                     id="verse-${verse.verseNumber}">
+                    <span class="verse-number">${verse.verseNumber}</span>
+                    <span class="verse-text">${escapeHtml(verse.text)}</span>
+                </div>
+            `
+              )
+              .join('')}
+        </div>
+    `;
+
+  // Scroll to the target verse
+  setTimeout(() => {
+    const targetElement = document.getElementById(`verse-${targetVerse}`);
+    if (targetElement) {
+      targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, 100);
 }
 
 // UI State functions
