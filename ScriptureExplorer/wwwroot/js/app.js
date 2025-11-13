@@ -1,9 +1,15 @@
-// Configuration
 const API_BASE = '/api/verses';
 const APP_NAME = 'ScriptureExplorer - Türkçe Kutsal Kitap';
 
-// DOM Elements
 let searchInput, resultsDiv;
+
+// 🆕 keep track of timeouts used in displayResults
+let pendingResultTimeouts = [];
+
+function clearPendingResults() {
+  pendingResultTimeouts.forEach((id) => clearTimeout(id));
+  pendingResultTimeouts = [];
+}
 
 // Initialize app when DOM is loaded
 document.addEventListener('DOMContentLoaded', function () {
@@ -67,18 +73,9 @@ async function search(query) {
   showLoading('Aranıyor...');
 
   try {
-    // 🆕 FIRST: Check if it's a chapter reference (e.g., "Yuhanna 17")
-    const chapterRef = tryParseChapterReference(query);
-    if (chapterRef.isChapter) {
-      // It's a chapter reference - show the entire chapter directly
-      await showChapter(chapterRef.bookName, chapterRef.chapter);
-      return;
-    }
-
-    // 🆕 SECOND: Check if it's a verse reference (e.g., "Yuhanna 17:1")
+    // 1️⃣ FIRST: Check if it's a verse reference (e.g., "Yuhanna 15:16-18")
     const verseRef = tryParseVerseReference(query);
     if (verseRef.isVerse) {
-      // It's a verse reference - show the verse range
       await showVerseRange(
         verseRef.bookName,
         verseRef.chapter,
@@ -87,7 +84,14 @@ async function search(query) {
       return;
     }
 
-    // If no reference detected, do regular text search
+    // 2️⃣ SECOND: Check if it's a chapter reference (e.g., "Yuhanna 15")
+    const chapterRef = tryParseChapterReference(query);
+    if (chapterRef.isChapter) {
+      await showChapter(chapterRef.bookName, chapterRef.chapter);
+      return;
+    }
+
+    // 3️⃣ Else: normal text search
     const response = await fetch(
       `${API_BASE}/search?q=${encodeURIComponent(query)}`
     );
@@ -97,12 +101,12 @@ async function search(query) {
     }
 
     const verses = await response.json();
-
-    if (verses.length === 0) {
+    if (!verses || verses.length === 0) {
       showEmpty(`"${query}" için sonuç bulunamadı`);
-    } else {
-      displayResults(verses, `"${query}" için sonuçlar`);
+      return;
     }
+
+    displayResults(verses, `Arama: "${query}"`);
   } catch (error) {
     console.error('Search error:', error);
     showError(`Arama sırasında hata oluştu: ${error.message}`);
@@ -135,7 +139,12 @@ function tryParseChapterReference(input) {
   const trimmed = input.trim();
   console.log('Parsing chapter reference:', trimmed);
 
-  // Actual book names from your API (with variations)
+  // 🚫 If it has ":", it's not a pure chapter reference (likely a verse ref)
+  if (trimmed.includes(':')) {
+    console.log('Has colon, not a pure chapter ref');
+    return { isChapter: false, bookName: '', chapter: 0 };
+  }
+
   const availableBooks = [
     'Yaratılış',
     "Mısır'dan Çıkış",
@@ -204,58 +213,41 @@ function tryParseChapterReference(input) {
     'Vahiy',
   ];
 
-  // Pattern: "BookName Number" (e.g., "Çölde Sayım 12")
-  const pattern = /^([a-zA-ZĞÜŞİÖÇğüşiöç\s\d\.']+)\s+(\d+)$/i;
-  const match = trimmed.match(pattern);
-
-  if (match) {
-    const inputBookName = match[1].trim();
-    const normalizedInput = normalizeBookName(inputBookName);
-    console.log(
-      'Input book name:',
-      inputBookName,
-      'Normalized:',
-      normalizedInput
-    );
-
-    // Find the best matching book name
-    const matchedBook = availableBooks.find((book) => {
-      const normalizedBook = normalizeBookName(book);
-      console.log('Comparing:', normalizedInput, 'vs', normalizedBook);
-      return normalizedBook === normalizedInput;
-    });
-
-    if (matchedBook) {
-      console.log('✅ Exact match found:', matchedBook);
-      return {
-        isChapter: true,
-        bookName: matchedBook, // Use the EXACT book name from database
-        chapter: parseInt(match[2]),
-      };
-    } else {
-      console.log('❌ No exact match, trying partial...');
-      // Try partial matching for cases like "1 Krallar" vs "1. Krallar"
-      const partialMatch = availableBooks.find((book) => {
-        const normalizedBook = normalizeBookName(book);
-        return (
-          normalizedBook.includes(normalizedInput) ||
-          normalizedInput.includes(normalizedBook)
-        );
-      });
-
-      if (partialMatch) {
-        console.log('✅ Partial match found:', partialMatch);
-        return {
-          isChapter: true,
-          bookName: partialMatch,
-          chapter: parseInt(match[2]),
-        };
-      }
-    }
+  // 🧠 SIMPLE PARSE: split at last space → "Çölde Sayım" + "12"
+  const lastSpace = trimmed.lastIndexOf(' ');
+  if (lastSpace === -1) {
+    console.log('❌ No space found for chapter pattern');
+    return { isChapter: false, bookName: '', chapter: 0 };
   }
 
-  console.log('❌ Not a chapter reference');
-  return { isChapter: false, bookName: '', chapter: 0 };
+  const bookPart = trimmed.substring(0, lastSpace).trim();
+  const chapterPart = trimmed.substring(lastSpace + 1).trim();
+
+  const chapterNum = parseInt(chapterPart, 10);
+  if (isNaN(chapterNum)) {
+    console.log('❌ Chapter part is not a number:', chapterPart);
+    return { isChapter: false, bookName: '', chapter: 0 };
+  }
+
+  const normalizedInput = normalizeBookName(bookPart);
+  console.log('Book part:', bookPart, 'Normalized:', normalizedInput);
+
+  const matchedBook =
+    availableBooks.find(
+      (book) => normalizeBookName(book) === normalizedInput
+    ) ||
+    availableBooks.find((book) => {
+      const nb = normalizeBookName(book);
+      return nb.includes(normalizedInput) || normalizedInput.includes(nb);
+    });
+
+  if (!matchedBook) {
+    console.log('❌ No book match for chapter ref');
+    return { isChapter: false, bookName: '', chapter: 0 };
+  }
+
+  console.log('✅ Chapter ref match:', matchedBook, chapterNum);
+  return { isChapter: true, bookName: matchedBook, chapter: chapterNum };
 }
 
 // 🆕 SIMILAR FIX FOR VERSE REFERENCES
@@ -419,8 +411,10 @@ async function getRandomVerse() {
   }
 }
 
-// Display results
 function displayResults(verses, title) {
+  // 🆕 clear any previous animations before starting new ones
+  clearPendingResults();
+
   resultsDiv.innerHTML = `
         <div class="results-header">
             ${title} • ${verses.length} sonuç
@@ -428,10 +422,13 @@ function displayResults(verses, title) {
     `;
 
   verses.forEach((verse, index) => {
-    setTimeout(() => {
+    const id = setTimeout(() => {
       const verseElement = createVerseElement(verse);
       resultsDiv.appendChild(verseElement);
-    }, index * 100); // Stagger animation
+    }, index * 100);
+
+    // 🆕 remember timeout id so we can cancel it later
+    pendingResultTimeouts.push(id);
   });
 }
 
@@ -502,6 +499,7 @@ async function showVerseContext(bookName, chapterNumber, verseNumber) {
 
 // Display entire chapter as reading view
 function displayChapterView(verses, bookName, chapterNumber) {
+  clearPendingResults();
   resultsDiv.innerHTML = `
         <div class="chapter-header">
             <h2>${bookName} ${chapterNumber}. Bölüm</h2>
@@ -524,6 +522,7 @@ function displayChapterView(verses, bookName, chapterNumber) {
 
 // Display verse with highlighted context
 function displayContextView(verses, bookName, chapterNumber, targetVerse) {
+  clearPendingResults();
   resultsDiv.innerHTML = `
         <div class="context-header">
             <h2>${bookName} ${chapterNumber}:${targetVerse} - Bağlam</h2>
@@ -562,6 +561,7 @@ function displayContextView(verses, bookName, chapterNumber, targetVerse) {
 
 // UI State functions
 function showLoading(message = 'Yükleniyor...') {
+  clearPendingResults();
   resultsDiv.innerHTML = `
         <div class="loading">
             <div>⏳ ${message}</div>
@@ -570,6 +570,7 @@ function showLoading(message = 'Yükleniyor...') {
 }
 
 function showError(message) {
+  clearPendingResults();
   resultsDiv.innerHTML = `
         <div class="error">
             <div>❌ ${message}</div>
@@ -581,6 +582,7 @@ function showError(message) {
 }
 
 function showEmpty(message) {
+  clearPendingResults();
   resultsDiv.innerHTML = `
         <div class="empty">
             <div>🔍 ${message}</div>

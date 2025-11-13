@@ -64,6 +64,15 @@ namespace ScriptureExplorer.Controllers
             }
         }
 
+        [HttpGet("{bookName}/{chapterNumber:int}/{verseRange}")]
+        public async Task<ActionResult<List<VerseDto>>> GetVerseRange(
+    string bookName,
+    int chapterNumber,
+    string verseRange)
+        {
+            return await HandleVerseRange(bookName, chapterNumber, verseRange);
+        }
+
         [HttpGet("search")]
         public async Task<ActionResult<List<VerseDto>>> SearchVerses([FromQuery] string q, [FromQuery] int limit = 50)
         {
@@ -183,8 +192,8 @@ namespace ScriptureExplorer.Controllers
         // 🆕 HELPER: Parse verse references like "Yuhanna 1:15-19"
         private (bool IsReference, string BookName, int Chapter, string VerseRange) TryParseVerseReference(string input)
         {
-            // Patterns: "Yuhanna 1:15-19", "Yaratılış 1:5", "Matta 3:1-5,7"
-            var pattern = @"^(\w+)\s+(\d+):([\d\-,]+)$";
+            // "Yuhanna 3:16-18", "Çölde Sayım 12:3-5,7"
+            var pattern = @"^\s*([\p{L}’' .-]+)\s+(\d+):([\d,\-– ]+)\s*$";
             var match = System.Text.RegularExpressions.Regex.Match(input.Trim(), pattern);
 
             if (match.Success)
@@ -201,7 +210,7 @@ namespace ScriptureExplorer.Controllers
         private (bool IsChapterReference, string BookName, int Chapter) TryParseChapterReference(string input)
         {
             // Patterns: "Yuhanna 1", "Yaratılış 1", "Matta 3"
-            var pattern = @"^(\w+)\s+(\d+)$";
+            var pattern = @"^\s*([\p{L}’' .-]+)\s+(\d+)\s*$";
             var match = System.Text.RegularExpressions.Regex.Match(input.Trim(), pattern);
 
             if (match.Success)
