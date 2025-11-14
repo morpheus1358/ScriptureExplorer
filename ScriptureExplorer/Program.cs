@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using ScriptureExplorer.Data;
 using ScriptureExplorer.Services;
 using ScriptureExplorer.Services.Interfaces;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authentication.Cookies;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,6 +11,11 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+.AddJwtBearer(JwtBearerDefaults.AuthenticationScheme,
+options => builder.Configuration.Bind("JwtSettings", options))
+.AddCookie(CookieAuthenticationDefaults.AuthenticationScheme,
+options => builder.Configuration.Bind("CookieSettings", options));
 
 // Database
 builder.Services.AddDbContext<AppDbContext>(options =>
