@@ -36,7 +36,7 @@ function updateAuthUi() {
   const statusSpan = document.getElementById('auth-status');
   const logoutBtn = document.getElementById('logout-btn');
   const authLinks = document.querySelectorAll('.auth-buttons .auth-link');
-  if (!statusSpan || !logoutBtn || !authLinks) return;
+  if (!statusSpan || !logoutBtn) return;
 
   if (authToken && currentUserName) {
     statusSpan.textContent = `Giriş yapıldı: ${currentUserName}`;

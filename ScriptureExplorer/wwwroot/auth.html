@@ -21,8 +21,10 @@
 
         <!-- LOGIN FORM -->
         <form id="loginForm" class="form visible">
-            <input type="text" id="loginIdentifier" placeholder="Kullanıcı adı veya e‑posta" required>
+    <input type="text" id="loginIdentifier" placeholder="Kullanıcı adı veya e-posta" required>
+            <p class="form-error" id="loginError"></p>
             <input type="password" id="loginPassword" placeholder="Şifre" required>
+            <p class="form-error" id="registerError"></p>
 
             <button type="submit" class="btn">Giriş Yap</button>
 
@@ -31,8 +33,8 @@
 
         <!-- REGISTER FORM -->
         <form id="registerForm" class="form">
-            <input type="text" id="registerUser" placeholder="Kullanıcı Adı" required>
-            <input type="email" id="registerEmail" placeholder="E-posta" required>
+    <input type="text" id="registerUser" placeholder="Kullanıcı Adı" required>
+    <input type="text" id="registerEmail" placeholder="E-posta" required>
             <input type="password" id="registerPassword" placeholder="Şifre" required>
 
             <button type="submit" class="btn">Kayıt Ol</button>
