@@ -8,12 +8,17 @@ namespace ScriptureExplorer.Models
     public class VerseTranslation
     {
         public int Id { get; set; }
+
         public int VerseId { get; set; }
-        public string Lang { get; set; } = null!;    // "tr","en","ar"
-        public string Text { get; set; } = string.Empty;
-        public string Source { get; set; } = "";   // BibleSuperSearch, Tanzil, etc.
-        public string SourceKey { get; set; } = ""; // optional original id
         public Verse Verse { get; set; } = null!;
-        public string VerseRange { get; set; } = ""; // "14-15" for combined verses, in turkish translation
+
+        public string Lang { get; set; } = "";         // "tr","en","ar"
+        public string TranslationCode { get; set; } = ""; // "TR_TBS","EN_KJV","AR_TANZIL"
+        public string Text { get; set; } = string.Empty;
+
+        public string Source { get; set; } = "";       // "BibleSuperSearch","Tanzil", etc.
+        public string SourceKey { get; set; } = "";    // optional id in original dataset
+        public string VerseRange { get; set; } = "";   // "14-15" when needed
     }
+
 }

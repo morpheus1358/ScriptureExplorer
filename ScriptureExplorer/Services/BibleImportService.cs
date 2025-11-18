@@ -3,6 +3,7 @@ using ScriptureExplorer.Data;
 using ScriptureExplorer.Models;
 using ScriptureExplorer.Services.Interfaces;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace ScriptureExplorer.Services
 {
@@ -203,14 +204,22 @@ namespace ScriptureExplorer.Services
 
                     // --- add translation (KJV) ---
                     if (!await _context.VerseTranslations
-        .AnyAsync(t => t.VerseId == verse.Id && t.Lang == "en"))
+        .AnyAsync(t => t.VerseId == verse.Id
+                    && t.Lang == "en"
+                    && t.TranslationCode == "EN_KJV"))
+                    {
+
+                    }
                     {
                         var translation = new VerseTranslation
                         {
                             VerseId = verse.Id,
                             Lang = "en",
+                            TranslationCode = "EN_KJV",
+                            Source = "BibleSuperSearch",
                             Text = text
                         };
+
 
 
                         _context.VerseTranslations.Add(translation);
@@ -248,8 +257,7 @@ namespace ScriptureExplorer.Services
             text = text.Replace("¶", "");       // paragraph marker
             text = text.Trim();
 
-            // If you *also* want to drop [bracketed] additions, uncomment:
-            // text = Regex.Replace(text, @"\[(.*?)\]", "").Trim();
+            text = Regex.Replace(text, @"\[(.*?)\]", "").Trim();
 
             return text;
         }
@@ -355,8 +363,9 @@ namespace ScriptureExplorer.Services
                         {
                             VerseId = verse.Id,
                             Lang = "tr",
+                            TranslationCode = "TR_TBS",
                             Text = importVerse.Text,
-                            Source = "TurkishBible",
+                            Source = "BibleSuperSearch",
                             SourceKey = importVerse.VerseId.ToString()
                         };
                         _context.VerseTranslations.Add(translation);

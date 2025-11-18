@@ -46,6 +46,7 @@ namespace ScriptureExplorer.Controllers
             }
         }
 
+        [HttpPost("kjv")]
         public async Task<ActionResult<ImportResult>> ImportKjvBible()
         {
             try
