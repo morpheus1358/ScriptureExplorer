@@ -38,7 +38,7 @@ namespace ScriptureExplorer.Controllers
                     .Include(v => v.Translations)
                     .Where(v =>
                         v.Chapter.Book.Names.Any(n =>
-                            n.Name.ToLower() == bookName.ToLower() && n.Lang == "tr") && // still lookup by Turkish name
+                            n.Name.ToLower() == bookName.ToLower()) && // allow lookup by any stored book name/language
                         v.Chapter.ChapterNumber == chapterNumber)
                     .OrderBy(v => v.VerseNumber)
                     .Select(v => new VerseDto
@@ -202,7 +202,7 @@ namespace ScriptureExplorer.Controllers
                     .Include(v => v.Translations)
                     .Where(v =>
                         v.Chapter.Book.Names.Any(n =>
-                            n.Name.ToLower() == bookName.ToLower() && n.Lang == "tr") &&
+                            n.Name.ToLower() == bookName.ToLower()) &&
                         v.Chapter.ChapterNumber == chapterNumber &&
                         verseNumbers.Contains(v.VerseNumber))
                     .OrderBy(v => v.VerseNumber)
