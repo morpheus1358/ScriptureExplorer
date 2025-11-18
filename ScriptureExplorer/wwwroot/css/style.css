@@ -18,6 +18,33 @@ body {
     margin: 0 auto;
     padding: 20px;
 }
+#auth-panel {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    align-items: center;
+    margin-top: 12px;
+}
+#auth-panel input,
+#auth-panel button {
+    padding: 10px 12px;
+    border-radius: 6px;
+    border: 1px solid #dfe6e9;
+    font-size: 14px;
+}
+#auth-panel input {
+    min-width: 180px;
+    flex: 1 1 200px;
+}
+#auth-panel button {
+    background: #3498db;
+    color: #fff;
+    border: none;
+    cursor: pointer;
+}
+
+#auth-panel button:hover { background: #2980b9; }
 
 /* Header Styles */
 header {
@@ -172,6 +199,23 @@ input[type="text"]:focus {
     gap: 10px;
 }
 
+@media (max-width: 992px) {
+    .input-group { flex-direction: column; }
+    .input-group .btn { width: 100%; }
+    .search-box { padding: 1.75rem; }
+}
+
+@media (max-width: 640px) {
+    header h1 { font-size: 1.8rem; }
+    header p { font-size: 1rem; }
+    #auth-panel { flex-direction: column; align-items: stretch; }
+    #auth-panel input, #auth-panel button { width: 100%; }
+    .verse, .search-box { padding: 1.25rem; }
+    .verse-reference { font-size: 1.1rem; }
+    .verse-text { font-size: 1rem; line-height: 1.6; }
+}
+
+
 .verse-reference::before {
     content: "📖";
     font-size: 1.2rem;
@@ -251,10 +295,21 @@ input[type="text"]:focus {
     border-left: 6px solid #95a5a6;
 }
 
+#auth-panel { display:flex; flex-direction:column; gap:8px; align-items:center; }
+.auth-buttons { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+#logout-btn { padding:10px 16px; border:none; border-radius:8px; background:#95a5a6; color:#fff; cursor:pointer; }
+#logout-btn:hover { background:#7f8c8d; }
+
+@media (max-width:640px) {
+  #auth-panel { align-items:stretch; }
+  .auth-buttons a, #logout-btn { width:100%; text-align:center; }
+}
+
+
 /* Responsive Design */
-@media (max-width: 768px) {
+@media (max-width: 480px) {
     .container {
-        padding: 10px;
+        padding: 12px;
     }
     
     .input-group {
@@ -265,6 +320,8 @@ input[type="text"]:focus {
         width: 100%;
         margin-bottom: 10px;
     }
+
+    
     
     .quick-links {
         justify-content: center;

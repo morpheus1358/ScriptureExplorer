@@ -80,6 +80,10 @@ namespace ScriptureExplorer.Controllers
 
             ApplicationUser? user;
 
+            if (string.IsNullOrWhiteSpace(model.EmailOrUserName))
+                return Unauthorized("Geçersiz kullanıcı adı / e-posta veya şifre.");
+
+
             // allow login with either email or username
             if (model.EmailOrUserName.Contains('@'))
             {

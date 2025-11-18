@@ -35,15 +35,17 @@ function clearAuth() {
 function updateAuthUi() {
   const statusSpan = document.getElementById('auth-status');
   const logoutBtn = document.getElementById('logout-btn');
-
-  if (!statusSpan || !logoutBtn) return;
+  const authLinks = document.querySelectorAll('.auth-buttons .auth-link');
+  if (!statusSpan || !logoutBtn || !authLinks) return;
 
   if (authToken && currentUserName) {
     statusSpan.textContent = `Giriş yapıldı: ${currentUserName}`;
     logoutBtn.style.display = 'inline-block';
+    authLinks.forEach((l) => (l.style.display = 'none'));
   } else {
     statusSpan.textContent = 'Giriş yapılmadı';
     logoutBtn.style.display = 'none';
+    authLinks.forEach((l) => (l.style.display = 'inline-block'));
   }
 }
 

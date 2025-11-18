@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8" />
+    <title>Giriş Yap • Scripture Explorer</title>
+    <link rel="stylesheet" href="css/auth.css">
+</head>
+
+<body>
+
+<div class="auth-container">
+
+    <div class="auth-card">
+        <h1>Scripture Explorer</h1>
+        <p class="subtitle">Hoş Geldiniz</p>
+
+        <div class="tabs">
+            <button id="loginTab" class="active">Giriş Yap</button>
+            <button id="registerTab">Kayıt Ol</button>
+        </div>
+
+        <!-- LOGIN FORM -->
+        <form id="loginForm" class="form visible">
+            <input type="text" id="loginIdentifier" placeholder="Kullanıcı adı veya e‑posta" required>
+            <input type="password" id="loginPassword" placeholder="Şifre" required>
+
+            <button type="submit" class="btn">Giriş Yap</button>
+
+            <p class="form-error" id="loginError"></p>
+        </form>
+
+        <!-- REGISTER FORM -->
+        <form id="registerForm" class="form">
+            <input type="text" id="registerUser" placeholder="Kullanıcı Adı" required>
+            <input type="email" id="registerEmail" placeholder="E-posta" required>
+            <input type="password" id="registerPassword" placeholder="Şifre" required>
+
+            <button type="submit" class="btn">Kayıt Ol</button>
+
+            <p class="form-error" id="registerError"></p>
+        </form>
+    </div>
+
+</div>
+
+<script src="js/auth.js"></script>
+</body>
+</html>

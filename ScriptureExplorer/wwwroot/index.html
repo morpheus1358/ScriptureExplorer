@@ -7,23 +7,21 @@
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-    <header>
-        <div class="container">
-            <h1>📖 ScriptureExplorer</h1>
-            <p>Türkçe Kutsal Kitap Arama ve Keşif Platformu</p>
-            <div id="auth-panel">
-    <span id="auth-status">Giriş yapılmadı</span>
+<header>
+  <div class="container">
+    <h1>ScriptureExplorer</h1>
+    <p>Türkçe Kutsal Kitap Arama ve Keşif Platformu</p>
 
-    <input id="auth-username" type="text" placeholder="Kullanıcı / E-posta">
-    <input id="auth-password" type="password" placeholder="Şifre">
-
-    <button onclick="login()">Giriş</button>
-    <button onclick="registerUser()">Kayıt ol</button>
-    <button onclick="logout()" id="logout-btn" style="display:none;">Çıkış</button>
+    <div id="auth-panel">
+      <span id="auth-status">Üye Ol</span>
+      <div class="auth-buttons">
+  <a class="btn btn-primary auth-link" href="auth.html?tab=login">Giriş Yap</a>
+  <a class="btn btn-secondary auth-link" href="auth.html?tab=register">Kayıt Ol</a>
+  <button onclick="logout()" id="logout-btn" style="display:none;">Çıkış</button>
 </div>
-
-        </div>
-    </header>
+    </div>
+  </div>
+</header>
 
     <div class="container">
         <div class="search-box">
