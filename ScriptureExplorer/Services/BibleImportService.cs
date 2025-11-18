@@ -203,13 +203,12 @@ namespace ScriptureExplorer.Services
                     }
 
                     // --- add translation (KJV) ---
-                    if (!await _context.VerseTranslations
-        .AnyAsync(t => t.VerseId == verse.Id
-                    && t.Lang == "en"
-                    && t.TranslationCode == "EN_KJV"))
-                    {
+                    var hasKjv = await _context.VerseTranslations
+    .AnyAsync(t => t.VerseId == verse.Id &&
+                   t.Lang == "en" &&
+                   t.TranslationCode == "EN_KJV");
 
-                    }
+                    if (!hasKjv)
                     {
                         var translation = new VerseTranslation
                         {
@@ -217,10 +216,9 @@ namespace ScriptureExplorer.Services
                             Lang = "en",
                             TranslationCode = "EN_KJV",
                             Source = "BibleSuperSearch",
-                            Text = text
+                            Text = text,
+                            SourceKey = parts[0]
                         };
-
-
 
                         _context.VerseTranslations.Add(translation);
                         versesImported++;

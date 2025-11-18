@@ -9,7 +9,7 @@ namespace ScriptureExplorer.Models
     {
         public int Id { get; set; }
         public int BookId { get; set; }
-        public string Lang { get; set; } = "tr";   // "tr","en","ar"
+        public string Lang { get; set; } = "";   // "tr","en","ar"
         public string Name { get; set; } = string.Empty;  // Yaratılış / Genesis / التكوين
         public Book Book { get; set; } = null!;
     }
