@@ -1,6 +1,158 @@
 const API_BASE = '/api/verses';
 const APP_NAME = 'ScriptureExplorer - Türkçe Kutsal Kitap';
 
+// 🧾 Auth state
+let authToken = null;
+let currentUserName = null;
+
+function loadAuthFromStorage() {
+  const stored = localStorage.getItem('authInfo');
+  if (!stored) return;
+  try {
+    const obj = JSON.parse(stored);
+    authToken = obj.token || null;
+    currentUserName = obj.userName || null;
+  } catch {
+    authToken = null;
+    currentUserName = null;
+  }
+}
+
+function saveAuth(token, userName) {
+  authToken = token;
+  currentUserName = userName;
+  localStorage.setItem('authInfo', JSON.stringify({ token, userName }));
+  updateAuthUi();
+}
+
+function clearAuth() {
+  authToken = null;
+  currentUserName = null;
+  localStorage.removeItem('authInfo');
+  updateAuthUi();
+}
+
+function updateAuthUi() {
+  const statusSpan = document.getElementById('auth-status');
+  const logoutBtn = document.getElementById('logout-btn');
+
+  if (!statusSpan || !logoutBtn) return;
+
+  if (authToken && currentUserName) {
+    statusSpan.textContent = `Giriş yapıldı: ${currentUserName}`;
+    logoutBtn.style.display = 'inline-block';
+  } else {
+    statusSpan.textContent = 'Giriş yapılmadı';
+    logoutBtn.style.display = 'none';
+  }
+}
+
+async function login() {
+  const userInput = document.getElementById('auth-username');
+  const passInput = document.getElementById('auth-password');
+  const usernameOrEmail = userInput.value.trim();
+  const password = passInput.value;
+
+  if (!usernameOrEmail || !password) {
+    alert('Lütfen kullanıcı adı/e-posta ve şifre girin.');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        emailOrUserName: usernameOrEmail,
+        password: password,
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      console.error('Login error:', text);
+      alert('Giriş başarısız.');
+      return;
+    }
+
+    const data = await res.json();
+    // data.token, data.userName, data.email, data.expiresAt
+    saveAuth(data.token, data.userName || usernameOrEmail);
+
+    // İstersen giriş sonrası inputları temizle
+    passInput.value = '';
+    alert('Giriş başarılı!');
+  } catch (err) {
+    console.error(err);
+    alert('Giriş sırasında hata oluştu.');
+  }
+}
+
+async function registerUser() {
+  const userInput = document.getElementById('auth-username');
+  const passInput = document.getElementById('auth-password');
+  const usernameOrEmail = userInput.value.trim();
+  const password = passInput.value;
+
+  if (!usernameOrEmail || !password) {
+    alert('Lütfen kullanıcı adı/e-posta ve şifre girin.');
+    return;
+  }
+
+  // Basit mantık: eğer @ varsa Email olarak kullan
+  const isEmail = usernameOrEmail.includes('@');
+  const email = isEmail ? usernameOrEmail : `${usernameOrEmail}@example.com`;
+  const userName = isEmail ? usernameOrEmail.split('@')[0] : usernameOrEmail;
+
+  try {
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: email,
+        userName: userName,
+        password: password,
+        confirmPassword: password,
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      console.error('Register error:', text);
+      alert('Kayıt başarısız.');
+      return;
+    }
+
+    const data = await res.json();
+    saveAuth(data.token, data.userName || userName);
+    passInput.value = '';
+    alert('Kayıt başarılı! Giriş yapıldı.');
+  } catch (err) {
+    console.error(err);
+    alert('Kayıt sırasında hata oluştu.');
+  }
+}
+
+function logout() {
+  clearAuth();
+  alert('Çıkış yapıldı.');
+}
+
+async function apiFetch(url, options = {}) {
+  const opts = { ...options };
+  opts.headers = opts.headers || {};
+
+  if (!opts.headers['Content-Type'] && opts.method && opts.method !== 'GET') {
+    opts.headers['Content-Type'] = 'application/json';
+  }
+
+  if (authToken) {
+    opts.headers['Authorization'] = 'Bearer ' + authToken;
+  }
+
+  return fetch(url, opts);
+}
+
 let searchInput, resultsDiv;
 
 // 🆕 keep track of timeouts used in displayResults
@@ -14,6 +166,8 @@ function clearPendingResults() {
 // Initialize app when DOM is loaded
 document.addEventListener('DOMContentLoaded', function () {
   initializeApp();
+  loadAuthFromStorage();
+  updateAuthUi();
 });
 
 function initializeApp() {

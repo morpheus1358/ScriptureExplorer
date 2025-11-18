@@ -66,15 +66,15 @@ namespace ScriptureExplorer.Controllers
 
         [HttpGet("{bookName}/{chapterNumber:int}/{verseRange}")]
         public async Task<ActionResult<List<VerseDto>>> GetVerseRange(
-    string bookName,
-    int chapterNumber,
-    string verseRange)
+        string bookName,
+        int chapterNumber,
+        string verseRange)
         {
             return await HandleVerseRange(bookName, chapterNumber, verseRange);
         }
 
         [HttpGet("search")]
-        public async Task<ActionResult<List<VerseDto>>> SearchVerses([FromQuery] string q, [FromQuery] int limit = 50)
+        public async Task<ActionResult<List<VerseDto>>> SearchVerses([FromQuery] string q, [FromQuery] int limit = 25)
         {
             try
             {
