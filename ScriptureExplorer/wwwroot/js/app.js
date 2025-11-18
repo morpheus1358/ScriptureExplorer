@@ -1,5 +1,6 @@
 const API_BASE = '/api/verses';
 const APP_NAME = 'ScriptureExplorer - Türkçe Kutsal Kitap';
+let currentLang = 'tr';
 
 // 🧾 Auth state
 let authToken = null;
@@ -180,6 +181,14 @@ function initializeApp() {
   // Set up event listeners
   setupEventListeners();
 
+  const langSelect = document.getElementById('languageSelect');
+  if (langSelect) {
+    langSelect.value = currentLang;
+    langSelect.addEventListener('change', () => {
+      currentLang = langSelect.value;
+    });
+  }
+
   // Load initial content
   loadInitialContent();
 }
@@ -249,7 +258,9 @@ async function search(query) {
 
     // 3️⃣ Else: normal text search
     const response = await fetch(
-      `${API_BASE}/search?q=${encodeURIComponent(query)}`
+      `${API_BASE}/search?q=${encodeURIComponent(
+        query
+      )}&lang=${encodeURIComponent(currentLang)}`
     );
 
     if (!response.ok) {
@@ -529,7 +540,9 @@ async function showVerseRange(bookName, chapterNumber, verseRange) {
 
   try {
     const response = await fetch(
-      `${API_BASE}/${bookName}/${chapterNumber}/${verseRange}`
+      `${API_BASE}/${bookName}/${chapterNumber}/${verseRange}?lang=${encodeURIComponent(
+        currentLang
+      )}`
     );
 
     if (!response.ok) throw new Error('Ayet aralığı getirilemedi');
@@ -548,7 +561,9 @@ async function getRandomVerse() {
   showLoading('Rastgele ayet getiriliyor...');
 
   try {
-    const response = await fetch(`${API_BASE}/random`);
+    const response = await fetch(
+      `${API_BASE}/random?lang=${encodeURIComponent(currentLang)}`
+    );
 
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -615,7 +630,11 @@ async function showChapter(bookName, chapterNumber) {
   showLoading(`${bookName} ${chapterNumber}. bölüm yükleniyor...`);
 
   try {
-    const response = await fetch(`${API_BASE}/${bookName}/${chapterNumber}`);
+    const response = await fetch(
+      `${API_BASE}/${bookName}/${chapterNumber}?lang=${encodeURIComponent(
+        currentLang
+      )}`
+    );
 
     if (!response.ok) throw new Error('Bölüm getirilemedi');
 
@@ -632,7 +651,11 @@ async function showVerseContext(bookName, chapterNumber, verseNumber) {
 
   try {
     // Get the entire chapter
-    const response = await fetch(`${API_BASE}/${bookName}/${chapterNumber}`);
+    const response = await fetch(
+      `${API_BASE}/${bookName}/${chapterNumber}?lang=${encodeURIComponent(
+        currentLang
+      )}`
+    );
 
     if (!response.ok) throw new Error('Ayet bağlamı getirilemedi');
 

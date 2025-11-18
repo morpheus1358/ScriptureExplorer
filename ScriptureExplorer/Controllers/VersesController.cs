@@ -20,12 +20,16 @@ namespace ScriptureExplorer.Controllers
         }
 
         // GET: api/verses/Yaratılış/1 (CHAPTER ENDPOINT)
+        // GET: api/verses/Yaratılış/1?lang=tr or lang=en
         [HttpGet("{bookName}/{chapterNumber}")]
-        public async Task<ActionResult<List<VerseDto>>> GetChapter(string bookName, int chapterNumber)
+        public async Task<ActionResult<List<VerseDto>>> GetChapter(
+            string bookName,
+            int chapterNumber,
+            [FromQuery] string lang = "tr")
         {
             try
             {
-                _logger.LogInformation("Getting chapter: {Book} {Chapter}", bookName, chapterNumber);
+                _logger.LogInformation("Getting chapter: {Book} {Chapter} ({Lang})", bookName, chapterNumber, lang);
 
                 var verses = await _context.Verses
                     .Include(v => v.Chapter)
@@ -34,18 +38,38 @@ namespace ScriptureExplorer.Controllers
                     .Include(v => v.Translations)
                     .Where(v =>
                         v.Chapter.Book.Names.Any(n =>
-                            n.Name.ToLower() == bookName.ToLower() && n.Lang == "tr") &&
+                            n.Name.ToLower() == bookName.ToLower() && n.Lang == "tr") && // still lookup by Turkish name
                         v.Chapter.ChapterNumber == chapterNumber)
                     .OrderBy(v => v.VerseNumber)
                     .Select(v => new VerseDto
                     {
                         Id = v.Id,
                         VerseNumber = v.VerseNumber,
-                        Text = v.Translations.FirstOrDefault(t => t.Lang == "tr").Text,
-                        BookName = v.Chapter.Book.Names.FirstOrDefault(n => n.Lang == "tr").Name,
+
+                        // pick translation text for requested lang, fallback if needed
+                        Text = v.Translations
+                            .Where(t => t.Lang == lang)
+                            .Select(t => t.Text)
+                            .FirstOrDefault()
+                            ?? v.Translations
+                                .Select(t => t.Text)
+                                .FirstOrDefault()
+                            ?? string.Empty,
+
+                        // book name in requested lang, fallback to Turkish
+                        BookName = v.Chapter.Book.Names
+                            .Where(n => n.Lang == lang)
+                            .Select(n => n.Name)
+                            .FirstOrDefault()
+                            ?? v.Chapter.Book.Names
+                                .Where(n => n.Lang == "tr")
+                                .Select(n => n.Name)
+                                .FirstOrDefault()
+                            ?? bookName,
+
                         ChapterNumber = v.Chapter.ChapterNumber,
                         BookNumber = v.BookNumber,
-                        Language = "tr"
+                        Language = lang
                     })
                     .ToListAsync();
 
@@ -64,51 +88,60 @@ namespace ScriptureExplorer.Controllers
             }
         }
 
+
         [HttpGet("{bookName}/{chapterNumber:int}/{verseRange}")]
         public async Task<ActionResult<List<VerseDto>>> GetVerseRange(
-        string bookName,
-        int chapterNumber,
-        string verseRange)
+    string bookName,
+    int chapterNumber,
+    string verseRange,
+    [FromQuery] string lang = "tr")
         {
-            return await HandleVerseRange(bookName, chapterNumber, verseRange);
+            return await HandleVerseRange(bookName, chapterNumber, verseRange, lang);
         }
 
         [HttpGet("search")]
-        public async Task<ActionResult<List<VerseDto>>> SearchVerses([FromQuery] string q, [FromQuery] int limit = 25)
+        public async Task<ActionResult<List<VerseDto>>> SearchVerses(
+     [FromQuery] string q,
+     [FromQuery] int limit = 25,
+     [FromQuery] string lang = "tr")
         {
             try
             {
                 if (string.IsNullOrWhiteSpace(q))
                     return BadRequest("Search query is required");
 
-                // 🆕 DETECT VERSE REFERENCE FORMAT
+                // verse reference?
                 var referenceResult = TryParseVerseReference(q);
                 if (referenceResult.IsReference)
                 {
                     _logger.LogInformation("Detected verse reference: {Reference}", q);
-                    return await HandleVerseRange(referenceResult.BookName, referenceResult.Chapter, referenceResult.VerseRange);
+                    return await HandleVerseRange(
+                        referenceResult.BookName,
+                        referenceResult.Chapter,
+                        referenceResult.VerseRange,
+                        lang);
                 }
 
-                // 🆕 DETECT CHAPTER REFERENCE FORMAT (e.g., "Yuhanna 1")
+                // chapter reference?
                 var chapterResult = TryParseChapterReference(q);
                 if (chapterResult.IsChapterReference)
                 {
                     _logger.LogInformation("Detected chapter reference: {Reference}", q);
-                    return await GetChapter(chapterResult.BookName, chapterResult.Chapter);
+                    return await GetChapter(chapterResult.BookName, chapterResult.Chapter, lang);
                 }
 
-                // Regular text search
+                // Text search
                 if (q.Length < 2)
                     return BadRequest("Search query must be at least 2 characters");
 
                 if (limit > 100) limit = 100;
 
-                _logger.LogInformation("Text searching verses for: {Query}", q);
+                _logger.LogInformation("Text searching verses for: {Query} ({Lang})", q, lang);
 
                 var searchTerm = $"%{q}%";
 
                 var verses = await _context.VerseTranslations
-                    .Where(vt => vt.Lang == "tr" && EF.Functions.Like(vt.Text, searchTerm))
+                    .Where(vt => vt.Lang == lang && EF.Functions.Like(vt.Text, searchTerm))
                     .OrderBy(vt => vt.Verse.BookNumber)
                     .ThenBy(vt => vt.Verse.ChapterNumber)
                     .ThenBy(vt => vt.Verse.VerseNumber)
@@ -119,16 +152,21 @@ namespace ScriptureExplorer.Controllers
                         VerseNumber = vt.Verse.VerseNumber,
                         Text = vt.Text,
                         BookName = vt.Verse.Chapter.Book.Names
-                            .Where(n => n.Lang == "tr")
+                            .Where(n => n.Lang == lang)
                             .Select(n => n.Name)
-                            .FirstOrDefault() ?? "Unknown",
+                            .FirstOrDefault()
+                            ?? vt.Verse.Chapter.Book.Names
+                                .Where(n => n.Lang == "tr")
+                                .Select(n => n.Name)
+                                .FirstOrDefault()
+                            ?? "Unknown",
                         ChapterNumber = vt.Verse.Chapter.ChapterNumber,
                         BookNumber = vt.Verse.BookNumber,
-                        Language = "tr"
+                        Language = lang
                     })
                     .ToListAsync();
 
-                return verses; // 🆕 ADD THIS RETURN STATEMENT
+                return verses;
             }
             catch (Exception ex)
             {
@@ -137,14 +175,19 @@ namespace ScriptureExplorer.Controllers
             }
         }
 
+
         // 🆕 CREATE THE MISSING GetVerseRange METHOD (renamed to HandleVerseRange)
-        private async Task<ActionResult<List<VerseDto>>> HandleVerseRange(string bookName, int chapterNumber, string verseRange)
+        private async Task<ActionResult<List<VerseDto>>> HandleVerseRange(
+    string bookName,
+    int chapterNumber,
+    string verseRange,
+    string lang = "tr")
         {
             try
             {
-                _logger.LogInformation("Getting verse range: {Book} {Chapter}:{Range}", bookName, chapterNumber, verseRange);
+                _logger.LogInformation("Getting verse range: {Book} {Chapter}:{Range} ({Lang})",
+                    bookName, chapterNumber, verseRange, lang);
 
-                // Parse verse range (supports: "15", "15-19", "15,16,17", "15-19,21")
                 var verseNumbers = ParseVerseRange(verseRange);
 
                 if (!verseNumbers.Any())
@@ -167,11 +210,26 @@ namespace ScriptureExplorer.Controllers
                     {
                         Id = v.Id,
                         VerseNumber = v.VerseNumber,
-                        Text = v.Translations.FirstOrDefault(t => t.Lang == "tr").Text,
-                        BookName = v.Chapter.Book.Names.FirstOrDefault(n => n.Lang == "tr").Name,
+                        Text = v.Translations
+                            .Where(t => t.Lang == lang)
+                            .Select(t => t.Text)
+                            .FirstOrDefault()
+                            ?? v.Translations
+                                .Select(t => t.Text)
+                                .FirstOrDefault()
+                            ?? string.Empty,
+                        BookName = v.Chapter.Book.Names
+                            .Where(n => n.Lang == lang)
+                            .Select(n => n.Name)
+                            .FirstOrDefault()
+                            ?? v.Chapter.Book.Names
+                                .Where(n => n.Lang == "tr")
+                                .Select(n => n.Name)
+                                .FirstOrDefault()
+                            ?? bookName,
                         ChapterNumber = v.Chapter.ChapterNumber,
                         BookNumber = v.BookNumber,
-                        Language = "tr"
+                        Language = lang
                     })
                     .ToListAsync();
 
@@ -188,6 +246,7 @@ namespace ScriptureExplorer.Controllers
                 return StatusCode(500, "An error occurred while retrieving the verse range");
             }
         }
+
 
         // 🆕 HELPER: Parse verse references like "Yuhanna 1:15-19"
         private (bool IsReference, string BookName, int Chapter, string VerseRange) TryParseVerseReference(string input)
@@ -294,8 +353,9 @@ namespace ScriptureExplorer.Controllers
         }
 
         // GET: api/verses/random
+        // GET: api/verses/random?lang=tr or lang=en
         [HttpGet("random")]
-        public async Task<ActionResult<VerseDto>> GetRandomVerse()
+        public async Task<ActionResult<VerseDto>> GetRandomVerse([FromQuery] string lang = "tr")
         {
             try
             {
@@ -318,11 +378,26 @@ namespace ScriptureExplorer.Controllers
                     {
                         Id = v.Id,
                         VerseNumber = v.VerseNumber,
-                        Text = v.Translations.FirstOrDefault(t => t.Lang == "tr").Text,
-                        BookName = v.Chapter.Book.Names.FirstOrDefault(n => n.Lang == "tr").Name,
+                        Text = v.Translations
+                            .Where(t => t.Lang == lang)
+                            .Select(t => t.Text)
+                            .FirstOrDefault()
+                            ?? v.Translations
+                                .Select(t => t.Text)
+                                .FirstOrDefault()
+                            ?? string.Empty,
+                        BookName = v.Chapter.Book.Names
+                            .Where(n => n.Lang == lang)
+                            .Select(n => n.Name)
+                            .FirstOrDefault()
+                            ?? v.Chapter.Book.Names
+                                .Where(n => n.Lang == "tr")
+                                .Select(n => n.Name)
+                                .FirstOrDefault()
+                            ?? "Unknown",
                         ChapterNumber = v.Chapter.ChapterNumber,
                         BookNumber = v.BookNumber,
-                        Language = "tr"
+                        Language = lang
                     })
                     .FirstOrDefaultAsync();
 
@@ -337,5 +412,7 @@ namespace ScriptureExplorer.Controllers
                 return StatusCode(500, "An error occurred while retrieving random verse");
             }
         }
+
+
     }
 }
