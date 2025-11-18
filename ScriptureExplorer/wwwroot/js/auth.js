@@ -40,8 +40,7 @@ loginForm.addEventListener('submit', async (e) => {
   });
 
   if (!res.ok) {
-    const text = await res.text();
-    errorBox.textContent = text || 'Giriş başarısız. Bilgileri kontrol edin.';
+    errorBox.textContent = 'Giriş başarısız. Bilgileri kontrol edin.';
     return;
   }
 
@@ -75,15 +74,9 @@ registerForm.addEventListener('submit', async (e) => {
     });
 
     const data = await res.json();
-    const pass = document.getElementById('registerPassword').value;
-    const rulesOk =
-      pass.length >= 6 &&
-      /[A-Z]/.test(pass) &&
-      /[a-z]/.test(pass) &&
-      /\d/.test(pass);
-    if (!rulesOk) {
+    if (!res.ok) {
       errorBox.textContent =
-        'Şifre en az 6 karakter, bir büyük, bir küçük harf ve rakam içermeli.';
+        (data.errors && data.errors[0]) || 'Kayıt başarısız.';
       return;
     }
 

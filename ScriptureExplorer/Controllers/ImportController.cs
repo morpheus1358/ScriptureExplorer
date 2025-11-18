@@ -46,50 +46,38 @@ namespace ScriptureExplorer.Controllers
             }
         }
 
-        [HttpPost("turkish-bible/upload")]
-        public async Task<ActionResult<ImportResult>> ImportTurkishBibleFromUpload(IFormFile file)
+        public async Task<ActionResult<ImportResult>> ImportKjvBible()
         {
-            if (file == null || file.Length == 0)
-            {
-                return BadRequest(new ImportResult
-                {
-                    Success = false,
-                    Message = "No file uploaded"
-                });
-            }
-
-            if (Path.GetExtension(file.FileName).ToLower() != ".csv")
-            {
-                return BadRequest(new ImportResult
-                {
-                    Success = false,
-                    Message = "Only CSV files are supported"
-                });
-            }
-
             try
             {
-                using var stream = file.OpenReadStream();
-                var result = await _importService.ImportTurkishBibleAsync(stream);
+                var csvPath = Path.Combine(Directory.GetCurrentDirectory(), "Data", "kjv.csv");
+                // ^ make sure the filename matches your actual file
+
+                var result = await _importService.ImportKjvBibleAsync(csvPath);
 
                 if (result.Success)
                 {
+                    _logger.LogInformation("KJV Bible import completed via API");
                     return Ok(result);
                 }
                 else
                 {
+                    _logger.LogWarning("KJV Bible import failed via API: {Message}", result.Message);
                     return BadRequest(result);
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error during Turkish Bible import from upload");
+                _logger.LogError(ex, "Error during KJV Bible import via API");
                 return StatusCode(500, new ImportResult
                 {
                     Success = false,
-                    Message = $"Import failed: {ex.Message}"
+                    Message = $"Internal server error: {ex.Message}"
                 });
             }
         }
+
+
+
     }
 }

@@ -5,7 +5,8 @@ namespace ScriptureExplorer.Services.Interfaces
     public interface IBibleImportService
     {
         Task<ImportResult> ImportTurkishBibleAsync(string csvPath);
-        Task<ImportResult> ImportTurkishBibleAsync(Stream csvStream);
+        Task<ImportResult> ImportKjvBibleAsync(string filePath);
+
     }
 
     public class ImportResult

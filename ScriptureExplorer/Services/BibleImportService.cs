@@ -88,6 +88,172 @@ namespace ScriptureExplorer.Services
             return result;
         }
 
+        public async Task<ImportResult> ImportKjvBibleAsync(string filePath)
+        {
+            var result = new ImportResult();
+
+            if (!File.Exists(filePath))
+            {
+                result.Success = false;
+                result.Message = $"File not found: {filePath}";
+                return result;
+            }
+
+            int versesImported = 0;
+            int booksImported = 0;
+            int chaptersImported = 0;
+
+            try
+            {
+                using var reader = new StreamReader(filePath, Encoding.UTF8);
+
+                string? line;
+                bool headerPassed = false;
+                int lineNumber = 0;
+
+                while ((line = await reader.ReadLineAsync()) != null)
+                {
+                    lineNumber++;
+                    if (string.IsNullOrWhiteSpace(line))
+                        continue;
+
+                    // Skip metadata until we hit the real header line:
+                    // Verse ID;Book Name;Book Number;Chapter;Verse;Text
+                    if (!headerPassed)
+                    {
+                        if (line.StartsWith("Verse ID;"))
+                            headerPassed = true;
+
+                        continue;
+                    }
+
+                    var parts = line.Split(';');
+                    if (parts.Length < 6)
+                        continue;
+
+                    // Columns: Verse ID;Book Name;Book Number;Chapter;Verse;Text
+                    string bookName = parts[1].Trim();
+                    if (!int.TryParse(parts[2], out int bookNumber)) continue;
+                    if (!int.TryParse(parts[3], out int chapterNumber)) continue;
+                    if (!int.TryParse(parts[4], out int verseNumber)) continue;
+
+                    string text = CleanKjvText(parts[5]);
+
+                    // --- get or create Book ---
+                    var book = await _context.Books
+                        .Include(b => b.Names)
+                        .FirstOrDefaultAsync(b => b.BookNumber == bookNumber);
+
+                    if (book == null)
+                    {
+                        book = new Book
+                        {
+                            BookNumber = bookNumber,
+                            Testament = bookNumber <= 39 ? Testament.Old : Testament.New,
+                            Names = new List<BookName>
+                    {
+                        new BookName { Lang = "en", Name = bookName }
+                    }
+                        };
+
+                        _context.Books.Add(book);
+                        booksImported++;
+                        await _context.SaveChangesAsync();
+                    }
+                    else if (!book.Names.Any(n => n.Lang == "en"))
+                    {
+                        book.Names.Add(new BookName { Lang = "en", Name = bookName });
+                        await _context.SaveChangesAsync();
+                    }
+
+                    // --- get or create Chapter ---
+                    var chapter = await _context.Chapters
+                        .FirstOrDefaultAsync(c => c.BookId == book.Id && c.ChapterNumber == chapterNumber);
+
+                    if (chapter == null)
+                    {
+                        chapter = new Chapter
+                        {
+                            BookId = book.Id,
+                            ChapterNumber = chapterNumber
+                        };
+                        _context.Chapters.Add(chapter);
+                        chaptersImported++;
+                        await _context.SaveChangesAsync();
+                    }
+
+                    // --- get or create Verse ---
+                    var verse = await _context.Verses
+                        .FirstOrDefaultAsync(v =>
+                            v.ChapterId == chapter.Id &&
+                            v.VerseNumber == verseNumber);
+
+                    if (verse == null)
+                    {
+                        verse = new Verse
+                        {
+                            BookNumber = bookNumber,
+                            ChapterNumber = chapterNumber,
+                            VerseNumber = verseNumber,
+                            ChapterId = chapter.Id
+                        };
+                        _context.Verses.Add(verse);
+                        await _context.SaveChangesAsync();
+                    }
+
+                    // --- add translation (KJV) ---
+                    if (!await _context.VerseTranslations
+        .AnyAsync(t => t.VerseId == verse.Id && t.Lang == "en"))
+                    {
+                        var translation = new VerseTranslation
+                        {
+                            VerseId = verse.Id,
+                            Lang = "en",
+                            Text = text
+                        };
+
+
+                        _context.VerseTranslations.Add(translation);
+                        versesImported++;
+                        await _context.SaveChangesAsync();
+                    }
+                }
+
+                result.Success = true;
+                result.VersesImported = versesImported;
+                result.BooksImported = booksImported;
+                result.ChaptersImported = chaptersImported;
+                result.TranslationsImported = versesImported;
+                result.Message = $"Successfully imported {versesImported} KJV verses.";
+
+                _logger.LogInformation("KJV import completed: {Verses} verses", versesImported);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error importing KJV Bible from {File}", filePath);
+                result.Success = false;
+                result.Message = $"Error importing KJV Bible: {ex.Message}";
+            }
+
+            return result;
+        }
+
+        private string CleanKjvText(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return string.Empty;
+
+            text = text.Replace("\ufeff", "");   // remove BOM if present
+            text = text.Replace("�", "");       // weird replacement char, if any
+            text = text.Replace("¶", "");       // paragraph marker
+            text = text.Trim();
+
+            // If you *also* want to drop [bracketed] additions, uncomment:
+            // text = Regex.Replace(text, @"\[(.*?)\]", "").Trim();
+
+            return text;
+        }
+
         private bool TryParseLine(string line, out ImportVerse importVerse)
         {
             importVerse = null;
@@ -208,6 +374,9 @@ namespace ScriptureExplorer.Services
 
             return stats;
         }
+
+
+
 
         private class ImportVerse
         {

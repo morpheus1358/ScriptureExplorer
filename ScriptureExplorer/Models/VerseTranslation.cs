@@ -9,7 +9,7 @@ namespace ScriptureExplorer.Models
     {
         public int Id { get; set; }
         public int VerseId { get; set; }
-        public string Lang { get; set; } = "tr";   // "tr","en","ar"
+        public string Lang { get; set; } = null!;    // "tr","en","ar"
         public string Text { get; set; } = string.Empty;
         public string Source { get; set; } = "";   // BibleSuperSearch, Tanzil, etc.
         public string SourceKey { get; set; } = ""; // optional original id
