@@ -1,7 +1,62 @@
-ScriptureExplorer is a web-based platform enabling seamless navigation and search across religious texts including the Bible and Quran. Built with ASP.NET Core Web API, it provides intuitive verse lookup, chapter navigation, and advanced search capabilities. The system serves as a digital bridge for scriptural study, offering clean API responses and a responsive interface for both desktop and mobile users.
+# 📜 ScriptureExplorer
 
-ScriptureExplorer develops a multilingual scripture exploration platform similar to BibleGetaway and Quran.com, enabling users to read, search, and compare verses in Arabic, English, and Turkish. Built with ASP.NET Core (C#) for the backend and React for the frontend, it offers fast verse lookup, translation alignment, bookmarking, and user-friendly navigation. The innovative aspect lies in combining cross-language parallel text visualization with modern search technology for religious study. Risks include managing large multilingual datasets and ensuring accurate verse alignment. Expected outcomes are a responsive, accessible web app that supports personal and academic scripture research. The target users are students, educators, translators, and general readers interested in comparative religious texts and multilingual spiritual study.
+ScriptureExplorer is a multilingual web platform that allows users to **read, search, and compare religious texts**, including the **Bible (English/Turkish)** and the **Quran (Arabic)**.  
+Developed with **ASP.NET Core Web API (C#)** for the backend and **React** for the frontend, it provides a clean and modern approach to comparative scripture study.
 
-## Verse Numbering Note
-The Turkish translation combines some verses (e.g., Genesis 1:14-15).
-This is normal in biblical translations and demonstrates real-world data handling.
+---
+
+## 🇬🇧 ScriptureExplorer (English)
+
+### 🔍 Features
+- ⚡ **Fast verse lookup** and chapter navigation  
+- 🔍 **Advanced full-text search** across multiple translations  
+- 🔀 **Parallel verse comparison** (Arabic – English – Turkish)  
+- 📱 **Responsive interface** for desktop and mobile  
+- 🔌 **Clean API architecture** suitable for integration  
+- ⭐ **Bookmarking and user-friendly study tools**
+
+### 🎯 Project Overview
+The platform handles complex challenges such as managing large multilingual scripture datasets and ensuring accurate verse alignment across translations.  
+Target users include **students, researchers, translators**, and individuals interested in **comparative religious studies**.
+
+---
+
+## 📄 Verse Numbering Note
+
+**TR:** Türkçe çevirilerde bazı ayetler birleştirilebilir (örneğin *Yaratılış 1:14–15*). Bu, çeviri standardından kaynaklanan normal bir durumdur ve gerçek dünya veri işleme ihtiyacını yansıtır.  
+**EN:** Some Turkish Bible translations combine certain verses (e.g., *Genesis 1:14–15*). This is normal in translation differences and demonstrates real-world data handling.
+
+---
+
+## 🇹🇷 ScriptureExplorer (Türkçe)
+
+### 🔍 Özellikler
+- ⚡ **Hızlı ayet bulma** ve bölüm gezintisi  
+- 🔍 **Çok dilli tam metin arama sistemi**  
+- 🔀 **Arapça–İngilizce–Türkçe paralel metin karşılaştırma**  
+- 📱 **Mobil ve masaüstü için responsive arayüz**  
+- 🔌 **Harici sistemlere uygun temiz API yapısı**  
+- ⭐ **Yer imi sistemi ve kullanıcı dostu arayüz**
+
+### 🎯 Proje Özeti
+ScriptureExplorer, büyük ölçekli çok dilli kutsal metin verilerini yönetme ve farklı çevirilerdeki ayetleri doğru şekilde hizalama gibi teknik zorlukları çözer.  
+Hedef kullanıcılar; **öğrenciler, akademisyenler, çevirmenler** ve dini metinleri karşılaştırmalı incelemek isteyen genel kullanıcılardır.
+
+---
+
+## 🛠️ Technologies Used
+- **ASP.NET Core Web API (C#)**
+- **React**
+- **Entity Framework Core**
+- **SQL / SQL Server**
+- **HTML / CSS / JavaScript**
+
+---
+
+## 📬 Contact
+For collaboration or questions:
+
+- **GitHub:** https://github.com/morpheus1358  
+- **Email:** *emreisikgor1358@gmail.com*
+
+---
