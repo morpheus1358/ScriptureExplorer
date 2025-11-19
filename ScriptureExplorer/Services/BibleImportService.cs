@@ -89,6 +89,44 @@ namespace ScriptureExplorer.Services
             return result;
         }
 
+        // Split a ;-separated line, respecting double quotes
+        private List<string> SplitSemicolonCsv(string line)
+        {
+            var result = new List<string>();
+            if (string.IsNullOrEmpty(line))
+                return result;
+
+            var sb = new StringBuilder();
+            bool inQuotes = false;
+
+            for (int i = 0; i < line.Length; i++)
+            {
+                char c = line[i];
+
+                if (c == '"')
+                {
+                    // toggle quote mode
+                    inQuotes = !inQuotes;
+                    sb.Append(c);
+                }
+                else if (c == ';' && !inQuotes)
+                {
+                    // field separator
+                    result.Add(sb.ToString());
+                    sb.Clear();
+                }
+                else
+                {
+                    sb.Append(c);
+                }
+            }
+
+            // last field
+            result.Add(sb.ToString());
+            return result;
+        }
+
+
         public async Task<ImportResult> ImportKjvBibleAsync(string filePath)
         {
             var result = new ImportResult();
@@ -128,8 +166,8 @@ namespace ScriptureExplorer.Services
                         continue;
                     }
 
-                    var parts = line.Split(';');
-                    if (parts.Length < 6)
+                    var parts = SplitSemicolonCsv(line);
+                    if (parts.Count < 6)
                         continue;
 
                     // Columns: Verse ID;Book Name;Book Number;Chapter;Verse;Text
@@ -138,7 +176,10 @@ namespace ScriptureExplorer.Services
                     if (!int.TryParse(parts[3], out int chapterNumber)) continue;
                     if (!int.TryParse(parts[4], out int verseNumber)) continue;
 
-                    string text = CleanKjvText(parts[5]);
+                    // Columns 0–4 are fixed, everything from 5 onward is the verse text
+                    string rawText = string.Join(";", parts.Skip(5));
+                    string text = CleanKjvText(rawText);
+
 
                     // --- get or create Book ---
                     var book = await _context.Books
@@ -250,15 +291,22 @@ namespace ScriptureExplorer.Services
             if (string.IsNullOrWhiteSpace(text))
                 return string.Empty;
 
-            text = text.Replace("\ufeff", "");   // remove BOM if present
-            text = text.Replace("�", "");       // weird replacement char, if any
-            text = text.Replace("¶", "");       // paragraph marker
-            text = text.Trim();
+            text = text.Replace("\ufeff", "");   // BOM
+            text = text.Replace("�", "");        // weird replacement char
+            text = text.Replace("¶", "");        // paragraph marker
 
+            // strip outer double-quotes if the field was quoted
+            text = text.Trim()
+                       .Trim('"')
+                       .Replace("\"\"", "\"");
+
+            // remove [editorial] words like [was]
             text = Regex.Replace(text, @"\[(.*?)\]", "").Trim();
 
             return text;
         }
+
+
 
         private bool TryParseLine(string line, out ImportVerse importVerse)
         {

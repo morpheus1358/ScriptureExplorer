@@ -1,144 +1,147 @@
 const API_BASE = '/api/verses';
 const APP_NAME = 'ScriptureExplorer - Türkçe Kutsal Kitap';
 let currentLang = 'tr';
-const BOOKS = {
-  tr: [
-    'Yaratılış',
-    "Mısır'dan Çıkış",
-    'Levililer',
-    'Çölde Sayım',
-    "Yasa'nın Tekrarı",
-    'Yeşu',
-    'Hakimler',
-    'Rut',
-    '1 Samuel',
-    '2 Samuel',
-    '1. Krallar',
-    '2. Krallar',
-    '1. Tarihler',
-    '2. Tarihler',
-    'Ezra',
-    'Nehemya',
-    'Ester',
-    'Eyüp',
-    'Mezmurlar',
-    "Süleyman'ın Özdeyişleri",
-    'Vaiz',
-    'Ezgiler Ezgisi',
-    'Yeşaya',
-    'Yeremya',
-    'Ağıtlar',
-    'Hezekiel',
-    'Daniel',
-    'Hoşea',
-    'Yoel',
-    'Amos',
-    'Yunus',
-    'Mika',
-    'Nahum',
-    'Habakkuk',
-    'Sefanya',
-    'Hagay',
-    'Zekeriya',
-    'Malaki',
-    'Matta',
-    'Markos',
-    'Luka',
-    'Yuhanna',
-    'Resullerin',
-    'Romalılara',
-    '1 Korintoslulara',
-    '2 Korintoslulara',
-    'Galatyalılara',
-    'Efeslilere',
-    'Filipililere',
-    'Koloselilere',
-    '1 Selaniklilere',
-    '2 Selaniklilere',
-    '1 Timoteosa',
-    '2 Timoteosa',
-    'Titusa',
-    'Filimona',
-    'İbranilere',
-    "Yakub'un",
-    "1 Petrus'un",
-    "2 Petrus'un",
-    "1 Yuhanna'nın",
-    "2 Yuhanna'nın",
-    "3 Yuhanna'nın",
-    "Yahuda'nın",
-    'Vahiy',
-  ],
+// Book lists for parsing references
+const BOOKS_TR = [
+  'Yaratılış',
+  "Mısır'dan Çıkış",
+  'Levililer',
+  'Çölde Sayım',
+  "Yasa'nın Tekrarı",
+  'Yeşu',
+  'Hakimler',
+  'Rut',
+  '1 Samuel',
+  '2 Samuel',
+  '1. Krallar',
+  '2. Krallar',
+  '1. Tarihler',
+  '2. Tarihler',
+  'Ezra',
+  'Nehemya',
+  'Ester',
+  'Eyüp',
+  'Mezmurlar',
+  "Süleyman'ın Özdeyişleri",
+  'Vaiz',
+  'Ezgiler Ezgisi',
+  'Yeşaya',
+  'Yeremya',
+  'Ağıtlar',
+  'Hezekiel',
+  'Daniel',
+  'Hoşea',
+  'Yoel',
+  'Amos',
+  'Yunus',
+  'Mika',
+  'Nahum',
+  'Habakkuk',
+  'Sefanya',
+  'Hagay',
+  'Zekeriya',
+  'Malaki',
+  'Matta',
+  'Markos',
+  'Luka',
+  'Yuhanna',
+  'Resullerin',
+  'Romalılara',
+  '1 Korintoslulara',
+  '2 Korintoslulara',
+  'Galatyalılara',
+  'Efeslilere',
+  'Filipililere',
+  'Koloselilere',
+  '1 Selaniklilere',
+  '2 Selaniklilere',
+  '1 Timoteosa',
+  '2 Timoteosa',
+  'Titusa',
+  'Filimona',
+  'İbranilere',
+  "Yakub'un",
+  "1 Petrus'un",
+  "2 Petrus'un",
+  "1 Yuhanna'nın",
+  "2 Yuhanna'nın",
+  "3 Yuhanna'nın",
+  "Yahuda'nın",
+  'Vahiy',
+];
 
-  en: [
-    'Genesis',
-    'Exodus',
-    'Leviticus',
-    'Numbers',
-    'Deuteronomy',
-    'Joshua',
-    'Judges',
-    'Ruth',
-    '1 Samuel',
-    '2 Samuel',
-    '1 Kings',
-    '2 Kings',
-    '1 Chronicles',
-    '2 Chronicles',
-    'Ezra',
-    'Nehemiah',
-    'Esther',
-    'Job',
-    'Psalms',
-    'Proverbs',
-    'Ecclesiastes',
-    'Song of Solomon',
-    'Isaiah',
-    'Jeremiah',
-    'Lamentations',
-    'Ezekiel',
-    'Daniel',
-    'Hosea',
-    'Joel',
-    'Amos',
-    'Obadiah',
-    'Jonah',
-    'Micah',
-    'Nahum',
-    'Habakkuk',
-    'Zephaniah',
-    'Haggai',
-    'Zechariah',
-    'Malachi',
-    'Matthew',
-    'Mark',
-    'Luke',
-    'John',
-    'Acts',
-    'Romans',
-    '1 Corinthians',
-    '2 Corinthians',
-    'Galatians',
-    'Ephesians',
-    'Philippians',
-    'Colossians',
-    '1 Thessalonians',
-    '2 Thessalonians',
-    '1 Timothy',
-    '2 Timothy',
-    'Titus',
-    'Philemon',
-    'Hebrews',
-    'James',
-    '1 Peter',
-    '2 Peter',
-    '1 John',
-    '2 John',
-    '3 John',
-    'Jude',
-    'Revelation',
-  ],
-};
+const BOOKS_EN = [
+  'Genesis',
+  'Exodus',
+  'Leviticus',
+  'Numbers',
+  'Deuteronomy',
+  'Joshua',
+  'Judges',
+  'Ruth',
+  '1 Samuel',
+  '2 Samuel',
+  '1 Kings',
+  '2 Kings',
+  '1 Chronicles',
+  '2 Chronicles',
+  'Ezra',
+  'Nehemiah',
+  'Esther',
+  'Job',
+  'Psalms',
+  'Proverbs',
+  'Ecclesiastes',
+  'Song of Solomon',
+  'Isaiah',
+  'Jeremiah',
+  'Lamentations',
+  'Ezekiel',
+  'Daniel',
+  'Hosea',
+  'Joel',
+  'Amos',
+  'Obadiah',
+  'Jonah',
+  'Micah',
+  'Nahum',
+  'Habakkuk',
+  'Zephaniah',
+  'Haggai',
+  'Zechariah',
+  'Malachi',
+  'Matthew',
+  'Mark',
+  'Luke',
+  'John',
+  'Acts',
+  'Romans',
+  '1 Corinthians',
+  '2 Corinthians',
+  'Galatians',
+  'Ephesians',
+  'Philippians',
+  'Colossians',
+  '1 Thessalonians',
+  '2 Thessalonians',
+  '1 Timothy',
+  '2 Timothy',
+  'Titus',
+  'Philemon',
+  'Hebrews',
+  'James',
+  '1 Peter',
+  '2 Peter',
+  '1 John',
+  '2 John',
+  '3 John',
+  'Jude',
+  'Revelation',
+];
+
+function getCurrentBookList() {
+  return currentLang === 'en' ? BOOKS_EN : BOOKS_TR;
+}
 
 // 🧾 Auth state
 let authToken = null;
@@ -421,22 +424,25 @@ async function search(query) {
 function normalizeBookName(bookName) {
   return bookName
     .toLowerCase()
-    .replace(/'/g, '') // remove apostrophes
-    .replace(/\./g, '') // remove dots
-    .replace(/\s+/g, ' ') // normalize spaces
-    .replace(/[^a-zğüşıöç\s0-9]/g, '') // keep letters, digits, spaces
+    .replace(/'/g, '')
+    .replace(/\./g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/[^a-zğüşıöç\s]/g, '')
     .trim();
 }
 
-function tryParseChapterReference(input, lang = currentLang) {
+function tryParseChapterReference(input) {
   const trimmed = input.trim();
-  console.log('Parsing chapter reference:', trimmed, 'lang=', lang);
+  console.log('Parsing chapter reference:', trimmed);
 
-  // if it has ':', it's a verse reference, not pure chapter
+  // If it has ":", it's not just a chapter reference
   if (trimmed.includes(':')) {
     return { isChapter: false, bookName: '', chapter: 0 };
   }
 
+  const availableBooks = getCurrentBookList();
+
+  // split on last space → "John 1" / "Çölde Sayım 12"
   const lastSpace = trimmed.lastIndexOf(' ');
   if (lastSpace === -1) {
     return { isChapter: false, bookName: '', chapter: 0 };
@@ -451,14 +457,13 @@ function tryParseChapterReference(input, lang = currentLang) {
   }
 
   const normalizedInput = normalizeBookName(bookPart);
-  const books = BOOKS[lang] || BOOKS.tr;
 
-  // exact normalized match
-  let matchedBook =
-    books.find((b) => normalizeBookName(b) === normalizedInput) ||
-    // fallback partial
-    books.find((b) => {
-      const nb = normalizeBookName(b);
+  const matchedBook =
+    availableBooks.find(
+      (book) => normalizeBookName(book) === normalizedInput
+    ) ||
+    availableBooks.find((book) => {
+      const nb = normalizeBookName(book);
       return nb.includes(normalizedInput) || normalizedInput.includes(nb);
     });
 
@@ -466,42 +471,44 @@ function tryParseChapterReference(input, lang = currentLang) {
     return { isChapter: false, bookName: '', chapter: 0 };
   }
 
+  console.log('✅ Chapter ref match:', matchedBook, chapterNum);
   return { isChapter: true, bookName: matchedBook, chapter: chapterNum };
 }
 
-// 🆕 SIMILAR FIX FOR VERSE REFERENCES
-function tryParseVerseReference(input, lang = currentLang) {
+function tryParseVerseReference(input) {
   const trimmed = input.trim();
-  console.log('Parsing verse reference:', trimmed, 'lang=', lang);
+  console.log('Parsing verse reference:', trimmed);
 
-  // Pattern: "BookName Number:NumberRange" (e.g., "John 3:16-18", "Yuhanna 3:16")
-  const pattern = /^([a-zA-ZĞÜŞİÖÇğüşiöç\s\d\.']+)\s+(\d+):([\d\-,– ]+)$/i;
+  const availableBooks = getCurrentBookList();
+
+  // Pattern: "BookName Number:NumberRange"  e.g. "John 3:16-18", "Çölde Sayım 12:3-5"
+  const pattern = /^([a-zA-ZĞÜŞİÖÇğüşiöç\s\d\.']+)\s+(\d+):([\d\-,]+)$/i;
   const match = trimmed.match(pattern);
-  if (!match) {
-    return { isVerse: false, bookName: '', chapter: 0, verseRange: '' };
+
+  if (match) {
+    const inputBookName = match[1].trim();
+    const normalizedInput = normalizeBookName(inputBookName);
+
+    let matchedBook =
+      availableBooks.find(
+        (book) => normalizeBookName(book) === normalizedInput
+      ) ||
+      availableBooks.find((book) => {
+        const nb = normalizeBookName(book);
+        return nb.includes(normalizedInput) || normalizedInput.includes(nb);
+      });
+
+    if (matchedBook) {
+      return {
+        isVerse: true,
+        bookName: matchedBook,
+        chapter: parseInt(match[2], 10),
+        verseRange: match[3],
+      };
+    }
   }
 
-  const inputBookName = match[1].trim();
-  const normalizedInput = normalizeBookName(inputBookName);
-  const books = BOOKS[lang] || BOOKS.tr;
-
-  let matchedBook =
-    books.find((b) => normalizeBookName(b) === normalizedInput) ||
-    books.find((b) => {
-      const nb = normalizeBookName(b);
-      return nb.includes(normalizedInput) || normalizedInput.includes(nb);
-    });
-
-  if (!matchedBook) {
-    return { isVerse: false, bookName: '', chapter: 0, verseRange: '' };
-  }
-
-  return {
-    isVerse: true,
-    bookName: matchedBook,
-    chapter: parseInt(match[2], 10),
-    verseRange: match[3],
-  };
+  return { isVerse: false, bookName: '', chapter: 0, verseRange: '' };
 }
 
 // 🆕 VERSE RANGE FUNCTION (for references like "Yuhanna 17:1-5")
