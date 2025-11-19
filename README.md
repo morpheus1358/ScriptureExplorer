@@ -56,4 +56,15 @@ Hedef kullanıcılar: **öğrenciler, akademisyenler, çevirmenler** ve dini met
 
 ---
 
-## 📬
+## 📬 Contact
+For collaboration or questions:
+
+- **GitHub:** https://github.com/morpheus1358  
+- **Email:** *emreisikgor1358@gmail.com*
+
+---
+
+## 📘 About
+ScriptureExplorer is inspired by platforms like **BibleGateway** and **Quran.com**, combining multilingual scripture exploration with modern search technologies.
+
+
