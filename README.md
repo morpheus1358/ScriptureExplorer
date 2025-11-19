@@ -16,14 +16,17 @@ Developed with **ASP.NET Core Web API (C#)** for the backend and **React** for t
 - ⭐ **Bookmarking and user-friendly study tools**
 
 ### 🎯 Project Overview
-The platform handles complex challenges such as managing large multilingual scripture datasets and ensuring accurate verse alignment across translations.  
+The platform handles complex challenges such as:
+- Managing large multilingual scripture datasets  
+- Ensuring accurate verse alignment across translations  
+
 Target users include **students, researchers, translators**, and individuals interested in **comparative religious studies**.
 
 ---
 
 ## 📄 Verse Numbering Note
 
-**TR:** Türkçe çevirilerde bazı ayetler birleştirilebilir (örneğin *Yaratılış 1:14–15*). Bu, çeviri standardından kaynaklanan normal bir durumdur ve gerçek dünya veri işleme ihtiyacını yansıtır.  
+**TR:** Türkçe çevirilerde bazı ayetler birleştirilebilir (ör. *Yaratılış 1:14–15*). Bu, çeviri farklarından kaynaklanan normal bir durumdur ve gerçek dünya veri yönetimi ihtiyaçlarını yansıtır.  
 **EN:** Some Turkish Bible translations combine certain verses (e.g., *Genesis 1:14–15*). This is normal in translation differences and demonstrates real-world data handling.
 
 ---
@@ -36,11 +39,11 @@ Target users include **students, researchers, translators**, and individuals int
 - 🔀 **Arapça–İngilizce–Türkçe paralel metin karşılaştırma**  
 - 📱 **Mobil ve masaüstü için responsive arayüz**  
 - 🔌 **Harici sistemlere uygun temiz API yapısı**  
-- ⭐ **Yer imi sistemi ve kullanıcı dostu arayüz**
+- ⭐ **Yer imi sistemi ve kullanıcı dostu tasarım**
 
 ### 🎯 Proje Özeti
 ScriptureExplorer, büyük ölçekli çok dilli kutsal metin verilerini yönetme ve farklı çevirilerdeki ayetleri doğru şekilde hizalama gibi teknik zorlukları çözer.  
-Hedef kullanıcılar; **öğrenciler, akademisyenler, çevirmenler** ve dini metinleri karşılaştırmalı incelemek isteyen genel kullanıcılardır.
+Hedef kullanıcılar: **öğrenciler, akademisyenler, çevirmenler** ve dini metinleri karşılaştırmalı incelemek isteyen genel kullanıcılardır.
 
 ---
 
@@ -53,10 +56,4 @@ Hedef kullanıcılar; **öğrenciler, akademisyenler, çevirmenler** ve dini met
 
 ---
 
-## 📬 Contact
-For collaboration or questions:
-
-- **GitHub:** https://github.com/morpheus1358  
-- **Email:** *emreisikgor1358@gmail.com*
-
----
+## 📬
