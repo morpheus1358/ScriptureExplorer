@@ -604,24 +604,173 @@ async function showVerseRange(bookName, chapterNumber, verseRange) {
   );
 
   try {
-    const response = await fetch(
+    // 1) Fetch primary range (currentLang)
+    const primaryRes = await fetch(
       `${API_BASE}/${encodeURIComponent(bookName)}/${chapterNumber}/${encodeURIComponent(
         verseRange,
       )}?lang=${encodeURIComponent(currentLang)}`,
     );
 
-    if (!response.ok)
+    if (!primaryRes.ok) {
       throw new Error(
         t('Ayet aralığı getirilemedi', 'Could not load verse range'),
       );
+    }
 
-    const verses = await response.json();
-    displayResults(verses, `${bookName} ${chapterNumber}:${verseRange}`);
+    const primaryVerses = await primaryRes.json();
+
+    // If not parallel mode, normal results
+    if (!parallelMode) {
+      displayResults(
+        primaryVerses,
+        `${bookName} ${chapterNumber}:${verseRange}`,
+      );
+      return;
+    }
+
+    // 2) Determine secondary language
+    const primaryLang = currentLang;
+    const secondaryLang =
+      parallelSecondaryLang === primaryLang
+        ? primaryLang === 'en'
+          ? 'tr'
+          : 'en'
+        : parallelSecondaryLang;
+
+    // Need bookNumber to map book name in secondary language
+    const bookNumber = primaryVerses?.[0]?.bookNumber;
+    if (!bookNumber) {
+      displayResults(
+        primaryVerses,
+        `${bookName} ${chapterNumber}:${verseRange}`,
+      );
+      return;
+    }
+
+    // Ensure secondary books loaded
+    await ensureBooksLoaded(secondaryLang);
+
+    const secondaryBookObj = booksCacheByLang[secondaryLang].books.find(
+      (b) => b.bookNumber === bookNumber,
+    );
+
+    // fallback if mapping fails
+    if (!secondaryBookObj?.name) {
+      displayResults(
+        primaryVerses,
+        `${bookName} ${chapterNumber}:${verseRange}`,
+      );
+      return;
+    }
+
+    const secondaryBookName = secondaryBookObj.name;
+
+    // 3) Fetch secondary range
+    const secondaryRes = await fetch(
+      `${API_BASE}/${encodeURIComponent(
+        secondaryBookName,
+      )}/${chapterNumber}/${encodeURIComponent(verseRange)}?lang=${encodeURIComponent(
+        secondaryLang,
+      )}`,
+    );
+
+    // If secondary fails, still show primary
+    if (!secondaryRes.ok) {
+      displayResults(
+        primaryVerses,
+        `${bookName} ${chapterNumber}:${verseRange}`,
+      );
+      return;
+    }
+
+    const secondaryVerses = await secondaryRes.json();
+
+    // 4) Merge by verseNumber
+    const merged = mergeParallelVerses(
+      primaryVerses,
+      secondaryVerses,
+      primaryLang,
+      secondaryLang,
+    );
+
+    // 5) Render parallel view (re-use your existing parallel chapter renderer)
+    // Title should be verse-range, not "Chapter"
+    displayParallelRangeView(merged, bookName, chapterNumber, verseRange);
   } catch (error) {
     showError(
       `${t('Ayet aralığı getirilemedi', 'Could not load verse range')}: ${error.message}`,
     );
   }
+}
+
+function displayParallelRangeView(rows, bookName, chapterNumber, verseRange) {
+  clearPendingResults();
+
+  const map = new Map();
+  for (const r of rows || []) {
+    if (r && !map.has(r.verseNumber)) map.set(r.verseNumber, r);
+  }
+  const verses = Array.from(map.values()).sort(
+    (a, b) => a.verseNumber - b.verseNumber,
+  );
+
+  const bookNumber = verses?.[0]?.bookNumber;
+
+  const primaryLang = (
+    verses?.[0]?.primaryLang ||
+    currentLang ||
+    'tr'
+  ).toUpperCase();
+  const secondaryLang = (
+    verses?.[0]?.secondaryLang ||
+    parallelSecondaryLang ||
+    'en'
+  ).toUpperCase();
+
+  const title = `${bookName} ${chapterNumber}:${verseRange}`;
+
+  resultsDiv.innerHTML = `
+    <div class="chapter-header">
+      <h2>${escapeHtml(title)}</h2>
+      <button class="btn btn-primary" id="backToSearchBtn">← ${t("Arama'ya Dön", 'Back to Search')}</button>
+    </div>
+
+    <div class="parallel-grid">
+      <div class="parallel-row is-head">
+        <div class="parallel-head">${escapeHtml(primaryLang)}</div>
+        <div class="parallel-head">${escapeHtml(secondaryLang)}</div>
+      </div>
+
+      ${verses
+        .map(
+          (v) => `
+          <div class="parallel-row" data-verse="${escapeHtml(String(v.verseNumber))}">
+            <div class="parallel-cell left">
+              <div class="parallel-verse-line">
+                <span class="verse-number">${escapeHtml(String(v.verseNumber))}</span>
+                <div class="parallel-text">${escapeHtml(v.primaryText || '')}</div>
+              </div>
+            </div>
+
+            <div class="parallel-cell right">
+              <div class="parallel-verse-line">
+                <span class="verse-number">${escapeHtml(String(v.verseNumber))}</span>
+                <div class="parallel-text">${escapeHtml(v.secondaryText || '')}</div>
+              </div>
+            </div>
+          </div>
+        `,
+        )
+        .join('')}
+    </div>
+  `;
+
+  document
+    .getElementById('backToSearchBtn')
+    ?.addEventListener('click', loadInitialContent);
+
+  // copy actions (EN should say Genesis, TR should say Yaratılış)
+  wireParallelCopyActions(bookNumber, chapterNumber);
 }
 
 async function getRandomVerse() {
