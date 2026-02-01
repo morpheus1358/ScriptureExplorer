@@ -12,15 +12,8 @@
     <h1>ScriptureExplorer</h1>
     <p>Türkçe Kutsal Kitap Arama ve Keşif Platformu</p>
     <div class="language-switch">
-      <label for="languageSelect">Dil / Language:</label>
-      <select id="languageSelectPrimary">
-        <option value="tr">Türkçe (TBS)</option>
-        <option value="en">English (KJV)</option>
-      </select>
-    </div>
-    <div class="language-switch">
   <label for="languageSelect">Dil / Language:</label>
-  <select id="languageSelectSecondary">
+  <select id="languageSelect">
     <option value="tr">Türkçe (TBS)</option>
     <option value="en">English (KJV)</option>
   </select>
@@ -29,7 +22,13 @@
     <input type="checkbox" id="parallelToggle" />
     Parallel
   </label>
+
+  <select id="secondaryLanguageSelect" style="margin-left:12px; display:none;">
+    <option value="en">English (KJV)</option>
+    <option value="tr">Türkçe (TBS)</option>
+  </select>
 </div>
+
 
     <div id="auth-panel">
       <span id="auth-status">Üye</span>

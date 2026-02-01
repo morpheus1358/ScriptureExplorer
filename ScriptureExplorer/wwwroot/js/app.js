@@ -1,42 +1,34 @@
 /* app.js — ScriptureExplorer (full)
    ✅ Fixes included:
-   - No more “Unexpected end of input” when clicking “Tüm Bölümü Oku / Bağlamında Gör”
-     (caused by unsafe inline onclick strings when book names contain quotes/apostrophes)
-   - Chapter navigation as LEFT/RIGHT side arrows (always visible while scrolling)
-   - Hide Prev arrow on very first chapter (e.g., Matthew 1 / Genesis 1)
+   - No more “Unexpected end of input” (no unsafe inline onclick with quotes/apostrophes)
+   - Chapter navigation as LEFT/RIGHT side arrows (fixed while scrolling)
+   - Hide Prev arrow on very first chapter (Genesis 1 / Matthew 1 etc.)
    - Dedupe verses in UI (prevents 1,1,2,2,... if API ever returns duplicates)
+   - Parallel mode WITHOUT needing /parallel backend:
+       fetch primary chapter (currentLang) + fetch secondary chapter (secondaryLang),
+       map by bookNumber using /books?lang=...
+       render 2 columns (TR left, EN right)
 */
 
 const API_BASE = '/api/verses';
 const APP_NAME = 'ScriptureExplorer - Türkçe Kutsal Kitap';
 
-let currentLang = 'tr';
-let booksCache = []; // books for current language
-let bookIndexByNumber = {}; // bookNumber -> index in booksCache
+// -------------------- App State --------------------
+let currentLang = 'tr'; // primary language
 let parallelMode = false;
-let parallelSecondaryLang = 'en'; // default
+let parallelSecondaryLang = 'en'; // secondary language
 
+// booksCache used for chapter prev/next navigation (always primary/currentLang)
+let booksCache = [];
+let bookIndexByNumber = {};
+
+// keep per-language caches so we can map bookNumber -> localized book name
 let booksCacheByLang = {
   tr: { books: [], indexByNumber: {} },
   en: { books: [], indexByNumber: {} },
 };
 
-async function loadBooksForLang(lang) {
-  const res = await fetch(`${API_BASE}/books?lang=${encodeURIComponent(lang)}`);
-  if (!res.ok) throw new Error(`Books yüklenemedi (${lang})`);
-  const books = await res.json();
-  const indexByNumber = {};
-  books.forEach((b, idx) => (indexByNumber[b.bookNumber] = idx));
-  booksCacheByLang[lang] = { books, indexByNumber };
-}
-
-async function ensureBooksLoaded(lang) {
-  if (!booksCacheByLang[lang]?.books?.length) {
-    await loadBooksForLang(lang);
-  }
-}
-
-// Book lists for parsing references
+// -------------------- Book lists for parsing references --------------------
 const BOOKS_TR = [
   'Yaratılış',
   "Mısır'dan Çıkış",
@@ -314,40 +306,40 @@ function logout() {
   alert('Çıkış yapıldı.');
 }
 
-async function apiFetch(url, options = {}) {
-  const opts = { ...options, headers: { ...(options.headers || {}) } };
+// -------------------- Books cache --------------------
+async function loadBooksForLang(lang) {
+  const res = await fetch(`${API_BASE}/books?lang=${encodeURIComponent(lang)}`);
+  if (!res.ok) throw new Error(`Books yüklenemedi (${lang})`);
 
-  if (!opts.headers['Content-Type'] && opts.method && opts.method !== 'GET') {
-    opts.headers['Content-Type'] = 'application/json';
-  }
+  const books = await res.json();
+  const indexByNumber = {};
+  books.forEach((b, idx) => (indexByNumber[b.bookNumber] = idx));
 
-  if (authToken) {
-    opts.headers['Authorization'] = 'Bearer ' + authToken;
-  }
-
-  return fetch(url, opts);
+  booksCacheByLang[lang] = { books, indexByNumber };
 }
 
-// -------------------- Books cache --------------------
+async function ensureBooksLoaded(lang) {
+  if (!booksCacheByLang[lang]?.books?.length) {
+    await loadBooksForLang(lang);
+  }
+}
+
 async function loadBooks() {
   await loadBooksForLang(currentLang);
-  // keep compatibility with your existing navigation code:
   booksCache = booksCacheByLang[currentLang].books;
   bookIndexByNumber = booksCacheByLang[currentLang].indexByNumber;
 }
 
 // -------------------- DOM + app init --------------------
-let searchInput, resultsDiv;
+let searchInput, resultsDiv, langSelectEl, parallelToggleEl, secondarySelectEl;
 
-// used in displayResults
 let pendingResultTimeouts = [];
-
 function clearPendingResults() {
   pendingResultTimeouts.forEach((id) => clearTimeout(id));
   pendingResultTimeouts = [];
 }
 
-document.addEventListener('DOMContentLoaded', function () {
+document.addEventListener('DOMContentLoaded', () => {
   initializeApp();
   loadAuthFromStorage();
   updateAuthUi();
@@ -357,27 +349,25 @@ function initializeApp() {
   searchInput = document.getElementById('searchInput');
   resultsDiv = document.getElementById('results');
 
+  // IMPORTANT: You currently have duplicate #languageSelect in HTML.
+  // We pick the first one (querySelector).
+  langSelectEl = document.querySelector('#languageSelect');
+
+  parallelToggleEl = document.getElementById('parallelToggle');
+  secondarySelectEl = document.getElementById('secondaryLanguageSelect'); // optional (if you added it)
+
   setupEventListeners();
 
-  const langSelect = document.getElementById('languageSelect');
-  if (langSelect) {
-    langSelect.value = currentLang;
-    langSelect.addEventListener('change', async () => {
-      currentLang = langSelect.value;
-      await loadBooks();
-      // optional: refresh current view if you want
-    });
-  }
+  // initial UI state
+  if (langSelectEl) langSelectEl.value = currentLang;
 
-  const parallelToggle = document.getElementById('parallelToggle');
-  if (parallelToggle) {
-    parallelToggle.checked = parallelMode;
-    parallelToggle.addEventListener('change', () => {
-      parallelMode = parallelToggle.checked;
+  if (parallelToggleEl) parallelToggleEl.checked = parallelMode;
 
-      // auto choose the "other" language as secondary
-      parallelSecondaryLang = currentLang === 'tr' ? 'en' : 'tr';
-    });
+  if (secondarySelectEl) {
+    // default secondary to opposite language
+    secondarySelectEl.value = currentLang === 'tr' ? 'en' : 'tr';
+    parallelSecondaryLang = secondarySelectEl.value;
+    secondarySelectEl.style.display = parallelMode ? 'inline-block' : 'none';
   }
 
   loadBooks().catch(console.error);
@@ -386,17 +376,67 @@ function initializeApp() {
 
 function setupEventListeners() {
   if (searchInput) {
-    searchInput.addEventListener('keypress', function (e) {
+    searchInput.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') performSearch();
     });
 
     searchInput.addEventListener(
       'input',
-      debounce(function () {}, 300),
+      debounce(() => {}, 250),
     );
   }
 
-  // (optional) expose auth actions if you use buttons
+  if (langSelectEl) {
+    langSelectEl.addEventListener('change', async () => {
+      currentLang = langSelectEl.value;
+      await loadBooks();
+
+      // if in parallel mode, auto flip secondary if it equals primary
+      if (parallelMode) {
+        if (secondarySelectEl) {
+          if (secondarySelectEl.value === currentLang) {
+            secondarySelectEl.value = currentLang === 'tr' ? 'en' : 'tr';
+          }
+          parallelSecondaryLang = secondarySelectEl.value;
+        } else {
+          parallelSecondaryLang = currentLang === 'tr' ? 'en' : 'tr';
+        }
+      }
+    });
+  }
+
+  if (parallelToggleEl) {
+    parallelToggleEl.addEventListener('change', () => {
+      parallelMode = parallelToggleEl.checked;
+
+      // show/hide secondary selector if it exists
+      if (secondarySelectEl) {
+        secondarySelectEl.style.display = parallelMode
+          ? 'inline-block'
+          : 'none';
+        if (parallelMode) {
+          if (
+            !secondarySelectEl.value ||
+            secondarySelectEl.value === currentLang
+          ) {
+            secondarySelectEl.value = currentLang === 'tr' ? 'en' : 'tr';
+          }
+          parallelSecondaryLang = secondarySelectEl.value;
+        }
+      } else {
+        // no dropdown => just pick the other language
+        parallelSecondaryLang = currentLang === 'tr' ? 'en' : 'tr';
+      }
+    });
+  }
+
+  if (secondarySelectEl) {
+    secondarySelectEl.addEventListener('change', () => {
+      parallelSecondaryLang = secondarySelectEl.value;
+    });
+  }
+
+  // expose auth functions if you use them elsewhere
   window.login = login;
   window.registerUser = registerUser;
   window.logout = logout;
@@ -404,13 +444,9 @@ function setupEventListeners() {
 
 function debounce(func, wait) {
   let timeout;
-  return function executedFunction(...args) {
-    const later = () => {
-      clearTimeout(timeout);
-      func(...args);
-    };
+  return function (...args) {
     clearTimeout(timeout);
-    timeout = setTimeout(later, wait);
+    timeout = setTimeout(() => func(...args), wait);
   };
 }
 
@@ -418,16 +454,16 @@ function debounce(func, wait) {
 async function performSearch() {
   const query = (searchInput?.value || '').trim();
   if (!query) {
-    showError('Lütfen bir arama terimi girin');
+    showError(
+      t('Lütfen bir arama terimi girin', 'Please enter a search query'),
+    );
     return;
   }
   await search(query);
 }
 
 async function search(query) {
-  if (document.getElementById('searchInput')) {
-    document.getElementById('searchInput').value = query;
-  }
+  if (searchInput) searchInput.value = query;
   showLoading(t('Aranıyor...', 'Searching...'));
 
   try {
@@ -453,7 +489,6 @@ async function search(query) {
     const response = await fetch(
       `${API_BASE}/search?q=${encodeURIComponent(query)}&lang=${encodeURIComponent(currentLang)}`,
     );
-
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
     const verses = await response.json();
@@ -490,7 +525,6 @@ function tryParseChapterReference(input) {
     return { isChapter: false, bookName: '', chapter: 0 };
 
   const availableBooks = getCurrentBookList();
-
   const lastSpace = trimmed.lastIndexOf(' ');
   if (lastSpace === -1) return { isChapter: false, bookName: '', chapter: 0 };
 
@@ -561,7 +595,9 @@ async function showVerseRange(bookName, chapterNumber, verseRange) {
 
   try {
     const response = await fetch(
-      `${API_BASE}/${encodeURIComponent(bookName)}/${chapterNumber}/${encodeURIComponent(verseRange)}?lang=${encodeURIComponent(currentLang)}`,
+      `${API_BASE}/${encodeURIComponent(bookName)}/${chapterNumber}/${encodeURIComponent(
+        verseRange,
+      )}?lang=${encodeURIComponent(currentLang)}`,
     );
 
     if (!response.ok)
@@ -585,7 +621,6 @@ async function getRandomVerse() {
     const response = await fetch(
       `${API_BASE}/random?lang=${encodeURIComponent(currentLang)}`,
     );
-
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
     const verse = await response.json();
@@ -620,10 +655,12 @@ function createVerseElement(verse) {
   const verseElement = document.createElement('div');
   verseElement.className = 'verse';
 
-  // ✅ No inline onclick strings => no syntax errors
+  // ✅ No inline onclick => no syntax errors from quotes/apostrophes
   verseElement.innerHTML = `
     <div class="verse-reference">
-      ${escapeHtml(verse.bookName)} ${escapeHtml(String(verse.chapterNumber))}:${escapeHtml(String(verse.verseNumber))}
+      ${escapeHtml(verse.bookName)} ${escapeHtml(String(verse.chapterNumber))}:${escapeHtml(
+        String(verse.verseNumber),
+      )}
     </div>
     <div class="verse-text">${escapeHtml(verse.text || '')}</div>
 
@@ -652,14 +689,14 @@ function createVerseElement(verse) {
   return verseElement;
 }
 
-// -------------------- Chapter reading view + side arrows --------------------
+// -------------------- Chapter reading view + parallel --------------------
 async function showChapter(bookName, chapterNumber) {
   showLoading(
     `${bookName} ${chapterNumber}. ${t('bölüm yükleniyor...', 'chapter loading...')}`,
   );
 
   try {
-    // Always load primary first (currentLang)
+    // 1) Load primary chapter in currentLang
     const primaryUrl =
       `${API_BASE}/${encodeURIComponent(bookName)}/${chapterNumber}` +
       `?lang=${encodeURIComponent(currentLang)}`;
@@ -667,6 +704,7 @@ async function showChapter(bookName, chapterNumber) {
     const primaryRes = await fetch(primaryUrl);
     if (!primaryRes.ok)
       throw new Error(t('Bölüm getirilemedi', 'Could not load chapter'));
+
     const primaryVerses = await primaryRes.json();
 
     // Normal mode
@@ -675,7 +713,7 @@ async function showChapter(bookName, chapterNumber) {
       return;
     }
 
-    // Parallel mode: figure out secondary lang
+    // Parallel mode: determine secondary language
     const primaryLang = currentLang;
     const secondaryLang =
       parallelSecondaryLang === primaryLang
@@ -684,10 +722,9 @@ async function showChapter(bookName, chapterNumber) {
           : 'en'
         : parallelSecondaryLang;
 
-    // Need secondary book name by bookNumber
+    // Need bookNumber to map to secondary language book name
     const bookNumber = primaryVerses?.[0]?.bookNumber;
     if (!bookNumber) {
-      // fallback: just show primary
       displayChapterView(primaryVerses, bookName, chapterNumber);
       return;
     }
@@ -698,28 +735,29 @@ async function showChapter(bookName, chapterNumber) {
       (b) => b.bookNumber === bookNumber,
     );
 
+    // If we can't map, fallback to primary-only view
     if (!secondaryBookObj?.name) {
-      // fallback: just show primary
       displayChapterView(primaryVerses, bookName, chapterNumber);
       return;
     }
 
     const secondaryBookName = secondaryBookObj.name;
 
+    // 2) Load secondary chapter using secondary book name
     const secondaryUrl =
       `${API_BASE}/${encodeURIComponent(secondaryBookName)}/${chapterNumber}` +
       `?lang=${encodeURIComponent(secondaryLang)}`;
 
     const secondaryRes = await fetch(secondaryUrl);
     if (!secondaryRes.ok) {
-      // still show primary if secondary missing
+      // still show primary if secondary fails
       displayChapterView(primaryVerses, bookName, chapterNumber);
       return;
     }
 
     const secondaryVerses = await secondaryRes.json();
 
-    // Merge verses by verseNumber
+    // 3) Merge by verseNumber
     const merged = mergeParallelVerses(
       primaryVerses,
       secondaryVerses,
@@ -727,6 +765,7 @@ async function showChapter(bookName, chapterNumber) {
       secondaryLang,
     );
 
+    // Use primary bookName for header, but show two columns
     displayParallelChapterView(merged, bookName, chapterNumber);
   } catch (error) {
     showError(
@@ -760,6 +799,7 @@ function mergeParallelVerses(
   });
 }
 
+// -------------------- Context view --------------------
 async function showVerseContext(bookName, chapterNumber, verseNumber) {
   showLoading(t('Ayet bağlamı yükleniyor...', 'Loading context...'));
 
@@ -785,25 +825,27 @@ async function showVerseContext(bookName, chapterNumber, verseNumber) {
   }
 }
 
+// -------------------- Chapter renderers --------------------
 function displayParallelChapterView(rows, bookName, chapterNumber) {
   clearPendingResults();
 
-  // rows: [{ verseNumber, primaryText, secondaryText, primaryLang, secondaryLang, bookNumber, ... }]
   const bookNumber = rows?.[0]?.bookNumber;
 
-  // figure out which lang is "primary" and "secondary" from payload
   const primaryLang = (
     rows?.[0]?.primaryLang ||
     currentLang ||
     'tr'
   ).toUpperCase();
-  const secondaryLang = (rows?.[0]?.secondaryLang || '').toUpperCase();
+  const secondaryLang = (
+    rows?.[0]?.secondaryLang ||
+    parallelSecondaryLang ||
+    ''
+  ).toUpperCase();
 
-  // Ensure stable verse ordering + unique verse numbers
+  // stable order + unique verseNumber
   const map = new Map();
   for (const r of rows || []) {
-    if (!r) continue;
-    if (!map.has(r.verseNumber)) map.set(r.verseNumber, r);
+    if (r && !map.has(r.verseNumber)) map.set(r.verseNumber, r);
   }
   const verses = Array.from(map.values()).sort(
     (a, b) => a.verseNumber - b.verseNumber,
@@ -812,11 +854,10 @@ function displayParallelChapterView(rows, bookName, chapterNumber) {
   resultsDiv.innerHTML = `
     <div class="chapter-header">
       <h2>${escapeHtml(bookName)} ${escapeHtml(String(chapterNumber))}. ${t('Bölüm', 'Chapter')}</h2>
-      <button class="btn btn-primary" id="backToSearchBtn">
-        ← ${t("Arama'ya Dön", 'Back to Search')}
-      </button>
+      <button class="btn btn-primary" id="backToSearchBtn">← ${t("Arama'ya Dön", 'Back to Search')}</button>
     </div>
 
+    <!-- Two-column parallel layout -->
     <div class="parallel-two-col">
       <div class="parallel-col-block">
         <div class="parallel-col-title">${escapeHtml(primaryLang)}</div>
@@ -824,7 +865,7 @@ function displayParallelChapterView(rows, bookName, chapterNumber) {
           ${verses
             .map(
               (v) => `
-              <div class="parallel-verse-box" id="tr-verse-${v.verseNumber}">
+              <div class="parallel-verse-box" id="p-verse-${v.verseNumber}">
                 <div class="parallel-verse-head">
                   <span class="verse-number">${escapeHtml(String(v.verseNumber))}</span>
                 </div>
@@ -842,7 +883,7 @@ function displayParallelChapterView(rows, bookName, chapterNumber) {
           ${verses
             .map(
               (v) => `
-              <div class="parallel-verse-box" id="en-verse-${v.verseNumber}">
+              <div class="parallel-verse-box" id="s-verse-${v.verseNumber}">
                 <div class="parallel-verse-head">
                   <span class="verse-number">${escapeHtml(String(v.verseNumber))}</span>
                 </div>
@@ -855,87 +896,33 @@ function displayParallelChapterView(rows, bookName, chapterNumber) {
       </div>
     </div>
 
-    <button id="prevChapterArrow" class="chapter-nav-arrow left" aria-label="${t(
-      'Önceki bölüm',
-      'Previous chapter',
-    )}">‹</button>
-    <button id="nextChapterArrow" class="chapter-nav-arrow right" aria-label="${t(
-      'Sonraki bölüm',
-      'Next chapter',
-    )}">›</button>
+    <!-- Side arrows -->
+    <button id="prevChapterArrow" class="chapter-nav-arrow left" aria-label="${t('Önceki bölüm', 'Previous chapter')}">‹</button>
+    <button id="nextChapterArrow" class="chapter-nav-arrow right" aria-label="${t('Sonraki bölüm', 'Next chapter')}">›</button>
   `;
 
   document
     .getElementById('backToSearchBtn')
     ?.addEventListener('click', loadInitialContent);
 
-  // --- wire prev/next (same logic you already have) ---
-  const prevBtn = document.getElementById('prevChapterArrow');
-  const nextBtn = document.getElementById('nextChapterArrow');
-
-  if (bookNumber == null || booksCache.length === 0) {
-    if (prevBtn) prevBtn.style.display = 'none';
-    if (nextBtn) nextBtn.style.display = 'none';
-    return;
-  }
-
-  const idx = bookIndexByNumber[bookNumber];
-  if (idx == null) {
-    if (prevBtn) prevBtn.style.display = 'none';
-    if (nextBtn) nextBtn.style.display = 'none';
-    return;
-  }
-
-  // prev target
-  let prevBookObj = booksCache[idx];
-  let prevChapter = chapterNumber - 1;
-  if (prevChapter < 1) {
-    const prevBook = booksCache[idx - 1];
-    if (prevBook) {
-      prevBookObj = prevBook;
-      prevChapter = prevBook.totalChapters;
-    } else {
-      prevBookObj = null;
-    }
-  }
-
-  // next target
-  let nextBookObj = booksCache[idx];
-  let nextChapter = chapterNumber + 1;
-  if (nextBookObj && nextChapter > nextBookObj.totalChapters) {
-    const nextBook = booksCache[idx + 1];
-    if (nextBook) {
-      nextBookObj = nextBook;
-      nextChapter = 1;
-    } else {
-      nextBookObj = null;
-    }
-  }
-
-  if (prevBookObj && prevBtn) {
-    prevBtn.style.display = 'flex';
-    prevBtn.onclick = () => showChapter(prevBookObj.name, prevChapter);
-  } else if (prevBtn) prevBtn.style.display = 'none';
-
-  if (nextBookObj && nextBtn) {
-    nextBtn.style.display = 'flex';
-    nextBtn.onclick = () => showChapter(nextBookObj.name, nextChapter);
-  } else if (nextBtn) nextBtn.style.display = 'none';
+  wirePrevNextArrows(
+    bookNumber,
+    chapterNumber,
+    'prevChapterArrow',
+    'nextChapterArrow',
+  );
 }
 
 function displayChapterView(verses, bookName, chapterNumber) {
   clearPendingResults();
 
-  // ✅ Remove duplicates if API returns them
   const uniqueVerses = dedupeVersesByNumber(verses);
   const bookNumber = uniqueVerses?.[0]?.bookNumber;
 
   resultsDiv.innerHTML = `
     <div class="chapter-header">
       <h2>${escapeHtml(bookName)} ${escapeHtml(String(chapterNumber))}. ${t('Bölüm', 'Chapter')}</h2>
-      <button class="btn btn-primary" id="backToSearchBtn">
-        ← ${t("Arama'ya Dön", 'Back to Search')}
-      </button>
+      <button class="btn btn-primary" id="backToSearchBtn">← ${t("Arama'ya Dön", 'Back to Search')}</button>
     </div>
 
     <div class="chapter-content">
@@ -956,15 +943,23 @@ function displayChapterView(verses, bookName, chapterNumber) {
     <button id="nextChapterArrow" class="chapter-nav-arrow right" aria-label="${t('Sonraki bölüm', 'Next chapter')}">›</button>
   `;
 
-  document.getElementById('backToSearchBtn')?.addEventListener('click', () => {
-    loadInitialContent();
-  });
+  document
+    .getElementById('backToSearchBtn')
+    ?.addEventListener('click', loadInitialContent);
 
-  // compute navigation
-  const prevBtn = document.getElementById('prevChapterArrow');
-  const nextBtn = document.getElementById('nextChapterArrow');
+  wirePrevNextArrows(
+    bookNumber,
+    chapterNumber,
+    'prevChapterArrow',
+    'nextChapterArrow',
+  );
+}
 
-  if (bookNumber == null || booksCache.length === 0) {
+function wirePrevNextArrows(bookNumber, chapterNumber, prevId, nextId) {
+  const prevBtn = document.getElementById(prevId);
+  const nextBtn = document.getElementById(nextId);
+
+  if (bookNumber == null || !booksCache.length) {
     if (prevBtn) prevBtn.style.display = 'none';
     if (nextBtn) nextBtn.style.display = 'none';
     return;
@@ -1005,7 +1000,6 @@ function displayChapterView(verses, bookName, chapterNumber) {
     }
   }
 
-  // wire + hide if missing
   if (prevBookObj && prevBtn) {
     prevBtn.style.display = 'flex';
     prevBtn.onclick = () => showChapter(prevBookObj.name, prevChapter);
@@ -1021,7 +1015,6 @@ function displayChapterView(verses, bookName, chapterNumber) {
   }
 }
 
-// -------------------- Context view --------------------
 function displayContextView(verses, bookName, chapterNumber, targetVerse) {
   clearPendingResults();
 
@@ -1029,15 +1022,12 @@ function displayContextView(verses, bookName, chapterNumber, targetVerse) {
 
   resultsDiv.innerHTML = `
     <div class="context-header">
-      <h2>${escapeHtml(bookName)} ${escapeHtml(String(chapterNumber))}:${escapeHtml(String(targetVerse))} — ${t('Bağlam', 'Context')}</h2>
+      <h2>${escapeHtml(bookName)} ${escapeHtml(String(chapterNumber))}:${escapeHtml(
+        String(targetVerse),
+      )} — ${t('Bağlam', 'Context')}</h2>
 
-      <button class="btn btn-primary" id="backToSearchBtn2">
-        ← ${t("Arama'ya Dön", 'Back to Search')}
-      </button>
-
-      <button class="btn btn-secondary" id="readFullChapterBtn">
-        ${t('Tüm Bölümü Oku', 'Read Full Chapter')}
-      </button>
+      <button class="btn btn-primary" id="backToSearchBtn2">← ${t("Arama'ya Dön", 'Back to Search')}</button>
+      <button class="btn btn-secondary" id="readFullChapterBtn">${t('Tüm Bölümü Oku', 'Read Full Chapter')}</button>
     </div>
 
     <div class="context-content">
@@ -1055,10 +1045,9 @@ function displayContextView(verses, bookName, chapterNumber, targetVerse) {
     </div>
   `;
 
-  document.getElementById('backToSearchBtn2')?.addEventListener('click', () => {
-    loadInitialContent();
-  });
-
+  document
+    .getElementById('backToSearchBtn2')
+    ?.addEventListener('click', loadInitialContent);
   document
     .getElementById('readFullChapterBtn')
     ?.addEventListener('click', () => {
@@ -1094,7 +1083,7 @@ function showError(message) {
   `;
   document
     .getElementById('retryBtn')
-    ?.addEventListener('click', () => loadInitialContent());
+    ?.addEventListener('click', loadInitialContent);
 }
 
 function showEmpty(message) {
@@ -1109,7 +1098,7 @@ function showEmpty(message) {
   `;
   document
     .getElementById('randomBtn')
-    ?.addEventListener('click', () => getRandomVerse());
+    ?.addEventListener('click', getRandomVerse);
 }
 
 function loadInitialContent() {
@@ -1147,6 +1136,7 @@ window.getRandomVerse = getRandomVerse;
 window.showChapter = showChapter;
 window.showVerseContext = showVerseContext;
 window.loadInitialContent = loadInitialContent;
+
 window.login = login;
 window.registerUser = registerUser;
 window.logout = logout;
