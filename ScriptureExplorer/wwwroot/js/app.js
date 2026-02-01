@@ -845,7 +845,7 @@ function displayContextView(verses, bookName, chapterNumber, targetVerse) {
 
   resultsDiv.innerHTML = `
     <div class="context-header">
-      <h2>${escapeHtml(bookName)} ${chapterNumber}:${targetVerse} - ${t('Bağlam', 'Context')}</h2>
+      <h2>${jsString(bookName)} ${chapterNumber}:${targetVerse} - ${t('Bağlam', 'Context')}</h2>
       <button class="btn btn-primary" onclick="loadInitialContent()">
         ← ${t("Arama'ya Dön", 'Back to Search')}
       </button>
