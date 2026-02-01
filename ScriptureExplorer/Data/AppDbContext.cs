@@ -44,6 +44,15 @@ namespace ScriptureExplorer.Data
                 .HasForeignKey(v => v.ChapterId)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            modelBuilder.Entity<Verse>()
+    .HasIndex(v => new { v.BookNumber, v.ChapterNumber, v.VerseNumber })
+    .IsUnique();
+
+            modelBuilder.Entity<VerseTranslation>()
+                .HasIndex(vt => new { vt.VerseId, vt.TranslationCode })
+                .IsUnique();
+
+
             // Verse -> Translations (one-to-many)
             modelBuilder.Entity<VerseTranslation>()
                 .HasOne(vt => vt.Verse)

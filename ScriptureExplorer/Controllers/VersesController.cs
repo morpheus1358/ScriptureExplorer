@@ -23,6 +23,13 @@ namespace ScriptureExplorer.Controllers
         private static string NormalizeLang(string? lang)
             => string.IsNullOrWhiteSpace(lang) ? "tr" : lang.Trim().ToLowerInvariant();
 
+        private static string ResolveTranslationCode(string lang, string? translationCode)
+        {
+            if (!string.IsNullOrWhiteSpace(translationCode))
+                return translationCode.Trim();
+            return TranslationCodeFor(lang);
+        }
+
         private static string TranslationCodeFor(string lang)
             => lang switch
             {

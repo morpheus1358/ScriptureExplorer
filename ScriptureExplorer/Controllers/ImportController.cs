@@ -69,8 +69,35 @@ namespace ScriptureExplorer.Controllers
             }
         }
 
+        [HttpPost("csv")]
+        public async Task<ActionResult<ImportResult>> ImportCsv(
+    [FromQuery] string fileName,
+    [FromQuery] string lang,
+    [FromQuery] string translationCode,
+    [FromQuery] string source = "PublicDomain",
+    [FromQuery] bool force = false,
+    [FromQuery] string delimiter = ",",
+    [FromQuery] bool hasHeader = true)
+        {
+            var csvPath = Path.Combine(
+                Directory.GetCurrentDirectory(),
+                "Data",
+                fileName
+            );
 
+            var result = await _importService.ImportBibleCsvAsync(
+                csvPath,
+                lang,
+                translationCode,
+                source,
+                forceReimport: force,
+                hasHeader: hasHeader,
+                delimiter: delimiter
+            );
 
+            if (result.Success) return Ok(result);
+            return BadRequest(result);
+        }
 
     }
 }
