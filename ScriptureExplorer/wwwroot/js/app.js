@@ -788,97 +788,138 @@ async function showVerseContext(bookName, chapterNumber, verseNumber) {
 function displayParallelChapterView(rows, bookName, chapterNumber) {
   clearPendingResults();
 
+  // rows: [{ verseNumber, primaryText, secondaryText, primaryLang, secondaryLang, bookNumber, ... }]
   const bookNumber = rows?.[0]?.bookNumber;
+
+  // figure out which lang is "primary" and "secondary" from payload
+  const primaryLang = (
+    rows?.[0]?.primaryLang ||
+    currentLang ||
+    'tr'
+  ).toUpperCase();
+  const secondaryLang = (rows?.[0]?.secondaryLang || '').toUpperCase();
+
+  // Ensure stable verse ordering + unique verse numbers
+  const map = new Map();
+  for (const r of rows || []) {
+    if (!r) continue;
+    if (!map.has(r.verseNumber)) map.set(r.verseNumber, r);
+  }
+  const verses = Array.from(map.values()).sort(
+    (a, b) => a.verseNumber - b.verseNumber,
+  );
 
   resultsDiv.innerHTML = `
     <div class="chapter-header">
-      <h2>${escapeHtml(bookName)} ${chapterNumber}. ${t('Bölüm', 'Chapter')}</h2>
-      <button class="btn btn-primary" id="backToSearchBtn">← ${t("Arama'ya Dön", 'Back to Search')}</button>
+      <h2>${escapeHtml(bookName)} ${escapeHtml(String(chapterNumber))}. ${t('Bölüm', 'Chapter')}</h2>
+      <button class="btn btn-primary" id="backToSearchBtn">
+        ← ${t("Arama'ya Dön", 'Back to Search')}
+      </button>
     </div>
 
-    <div class="chapter-content parallel-chapter">
-      ${rows
-        .map(
-          (r) => `
-        <div class="parallel-verse" id="verse-${r.verseNumber}">
-          <div class="parallel-col">
-            <div class="parallel-meta">
-              <span class="verse-number">${r.verseNumber}</span>
-              <span class="parallel-lang">${escapeHtml((r.primaryLang || currentLang).toUpperCase())}</span>
-            </div>
-            <div class="parallel-text">${escapeHtml(r.primaryText || '')}</div>
-          </div>
-
-          <div class="parallel-col">
-            <div class="parallel-meta">
-              <span class="verse-number">${r.verseNumber}</span>
-              <span class="parallel-lang">${escapeHtml((r.secondaryLang || '').toUpperCase())}</span>
-            </div>
-            <div class="parallel-text">${escapeHtml(r.secondaryText || '')}</div>
-          </div>
+    <div class="parallel-two-col">
+      <div class="parallel-col-block">
+        <div class="parallel-col-title">${escapeHtml(primaryLang)}</div>
+        <div class="parallel-col-list">
+          ${verses
+            .map(
+              (v) => `
+              <div class="parallel-verse-box" id="tr-verse-${v.verseNumber}">
+                <div class="parallel-verse-head">
+                  <span class="verse-number">${escapeHtml(String(v.verseNumber))}</span>
+                </div>
+                <div class="parallel-verse-text">${escapeHtml(v.primaryText || '')}</div>
+              </div>
+            `,
+            )
+            .join('')}
         </div>
-      `,
-        )
-        .join('')}
+      </div>
+
+      <div class="parallel-col-block">
+        <div class="parallel-col-title">${escapeHtml(secondaryLang)}</div>
+        <div class="parallel-col-list">
+          ${verses
+            .map(
+              (v) => `
+              <div class="parallel-verse-box" id="en-verse-${v.verseNumber}">
+                <div class="parallel-verse-head">
+                  <span class="verse-number">${escapeHtml(String(v.verseNumber))}</span>
+                </div>
+                <div class="parallel-verse-text">${escapeHtml(v.secondaryText || '')}</div>
+              </div>
+            `,
+            )
+            .join('')}
+        </div>
+      </div>
     </div>
 
-    <button id="prevChapterBtn" class="chapter-nav-arrow left" aria-label="${t('Önceki bölüm', 'Previous chapter')}">‹</button>
-    <button id="nextChapterBtn" class="chapter-nav-arrow right" aria-label="${t('Sonraki bölüm', 'Next chapter')}">›</button>
+    <button id="prevChapterArrow" class="chapter-nav-arrow left" aria-label="${t(
+      'Önceki bölüm',
+      'Previous chapter',
+    )}">‹</button>
+    <button id="nextChapterArrow" class="chapter-nav-arrow right" aria-label="${t(
+      'Sonraki bölüm',
+      'Next chapter',
+    )}">›</button>
   `;
 
   document
     .getElementById('backToSearchBtn')
     ?.addEventListener('click', loadInitialContent);
 
-  // reuse your existing prev/next computation (booksCache + bookIndexByNumber)
+  // --- wire prev/next (same logic you already have) ---
+  const prevBtn = document.getElementById('prevChapterArrow');
+  const nextBtn = document.getElementById('nextChapterArrow');
+
   if (bookNumber == null || booksCache.length === 0) {
-    hideChapterNavArrows();
+    if (prevBtn) prevBtn.style.display = 'none';
+    if (nextBtn) nextBtn.style.display = 'none';
     return;
   }
 
   const idx = bookIndexByNumber[bookNumber];
   if (idx == null) {
-    hideChapterNavArrows();
+    if (prevBtn) prevBtn.style.display = 'none';
+    if (nextBtn) nextBtn.style.display = 'none';
     return;
   }
 
-  // prev
-  let prevBook = booksCache[idx];
+  // prev target
+  let prevBookObj = booksCache[idx];
   let prevChapter = chapterNumber - 1;
   if (prevChapter < 1) {
-    const prevBookObj = booksCache[idx - 1];
-    if (prevBookObj) {
-      prevBook = prevBookObj;
-      prevChapter = prevBookObj.totalChapters;
+    const prevBook = booksCache[idx - 1];
+    if (prevBook) {
+      prevBookObj = prevBook;
+      prevChapter = prevBook.totalChapters;
     } else {
-      prevBook = null;
+      prevBookObj = null;
     }
   }
 
-  // next
-  let nextBook = booksCache[idx];
+  // next target
+  let nextBookObj = booksCache[idx];
   let nextChapter = chapterNumber + 1;
-  if (nextBook && nextChapter > nextBook.totalChapters) {
-    const nextBookObj = booksCache[idx + 1];
-    if (nextBookObj) {
-      nextBook = nextBookObj;
+  if (nextBookObj && nextChapter > nextBookObj.totalChapters) {
+    const nextBook = booksCache[idx + 1];
+    if (nextBook) {
+      nextBookObj = nextBook;
       nextChapter = 1;
     } else {
-      nextBook = null;
+      nextBookObj = null;
     }
   }
 
-  const prevBtn = document.getElementById('prevChapterBtn');
-  const nextBtn = document.getElementById('nextChapterBtn');
-
-  if (prevBook && prevBtn) {
+  if (prevBookObj && prevBtn) {
     prevBtn.style.display = 'flex';
-    prevBtn.onclick = () => showChapter(prevBook.name, prevChapter);
+    prevBtn.onclick = () => showChapter(prevBookObj.name, prevChapter);
   } else if (prevBtn) prevBtn.style.display = 'none';
 
-  if (nextBook && nextBtn) {
+  if (nextBookObj && nextBtn) {
     nextBtn.style.display = 'flex';
-    nextBtn.onclick = () => showChapter(nextBook.name, nextChapter);
+    nextBtn.onclick = () => showChapter(nextBookObj.name, nextChapter);
   } else if (nextBtn) nextBtn.style.display = 'none';
 }
 

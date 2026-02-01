@@ -415,6 +415,69 @@ input[type="text"]:focus {
   padding-top: 8px;
 }
 
+.parallel-two-col {
+  max-width: 900px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 12px;
+}
+
+.parallel-col-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.parallel-col-title {
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #2c3e50;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(52, 152, 219, 0.08);
+  position: sticky;
+  top: 10px;
+  z-index: 2;
+}
+
+.parallel-col-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.parallel-verse-box {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+}
+
+.parallel-verse-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.parallel-verse-text {
+  font-size: 1.05rem;
+  line-height: 1.7;
+  color: #333;
+}
+
+/* mobile: stack columns */
+@media (max-width: 900px) {
+  .parallel-two-col {
+    grid-template-columns: 1fr;
+  }
+}
+
 
 
 /* Chapter View Styles */
