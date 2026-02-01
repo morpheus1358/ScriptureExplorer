@@ -1,7 +1,17 @@
+/* app.js — ScriptureExplorer (full)
+   ✅ Fixes included:
+   - No more “Unexpected end of input” when clicking “Tüm Bölümü Oku / Bağlamında Gör”
+     (caused by unsafe inline onclick strings when book names contain quotes/apostrophes)
+   - Chapter navigation as LEFT/RIGHT side arrows (always visible while scrolling)
+   - Hide Prev arrow on very first chapter (e.g., Matthew 1 / Genesis 1)
+   - Dedupe verses in UI (prevents 1,1,2,2,... if API ever returns duplicates)
+*/
+
 const API_BASE = '/api/verses';
 const APP_NAME = 'ScriptureExplorer - Türkçe Kutsal Kitap';
+
 let currentLang = 'tr';
-let booksCache = []; // array of books for current language
+let booksCache = []; // books for current language
 let bookIndexByNumber = {}; // bookNumber -> index in booksCache
 
 // Book lists for parsing references
@@ -146,7 +156,11 @@ function getCurrentBookList() {
   return currentLang === 'en' ? BOOKS_EN : BOOKS_TR;
 }
 
-// 🧾 Auth state
+function t(trText, enText) {
+  return currentLang === 'en' ? enText : trText;
+}
+
+// -------------------- Auth (optional) --------------------
 let authToken = null;
 let currentUserName = null;
 
@@ -161,16 +175,6 @@ function loadAuthFromStorage() {
     authToken = null;
     currentUserName = null;
   }
-}
-
-async function loadBooks() {
-  const res = await fetch(
-    `${API_BASE}/books?lang=${encodeURIComponent(currentLang)}`,
-  );
-  if (!res.ok) throw new Error('Books yüklenemedi');
-  booksCache = await res.json();
-  bookIndexByNumber = {};
-  booksCache.forEach((b, idx) => (bookIndexByNumber[b.bookNumber] = idx));
 }
 
 function saveAuth(token, userName) {
@@ -207,8 +211,8 @@ function updateAuthUi() {
 async function login() {
   const userInput = document.getElementById('auth-username');
   const passInput = document.getElementById('auth-password');
-  const usernameOrEmail = userInput.value.trim();
-  const password = passInput.value;
+  const usernameOrEmail = (userInput?.value || '').trim();
+  const password = passInput?.value || '';
 
   if (!usernameOrEmail || !password) {
     alert('Lütfen kullanıcı adı/e-posta ve şifre girin.');
@@ -219,10 +223,7 @@ async function login() {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        emailOrUserName: usernameOrEmail,
-        password: password,
-      }),
+      body: JSON.stringify({ emailOrUserName: usernameOrEmail, password }),
     });
 
     if (!res.ok) {
@@ -233,11 +234,8 @@ async function login() {
     }
 
     const data = await res.json();
-    // data.token, data.userName, data.email, data.expiresAt
     saveAuth(data.token, data.userName || usernameOrEmail);
-
-    // İstersen giriş sonrası inputları temizle
-    passInput.value = '';
+    if (passInput) passInput.value = '';
     alert('Giriş başarılı!');
   } catch (err) {
     console.error(err);
@@ -248,15 +246,14 @@ async function login() {
 async function registerUser() {
   const userInput = document.getElementById('auth-username');
   const passInput = document.getElementById('auth-password');
-  const usernameOrEmail = userInput.value.trim();
-  const password = passInput.value;
+  const usernameOrEmail = (userInput?.value || '').trim();
+  const password = passInput?.value || '';
 
   if (!usernameOrEmail || !password) {
     alert('Lütfen kullanıcı adı/e-posta ve şifre girin.');
     return;
   }
 
-  // Basit mantık: eğer @ varsa Email olarak kullan
   const isEmail = usernameOrEmail.includes('@');
   const email = isEmail ? usernameOrEmail : `${usernameOrEmail}@example.com`;
   const userName = isEmail ? usernameOrEmail.split('@')[0] : usernameOrEmail;
@@ -266,9 +263,9 @@ async function registerUser() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        email: email,
-        userName: userName,
-        password: password,
+        email,
+        userName,
+        password,
         confirmPassword: password,
       }),
     });
@@ -282,7 +279,7 @@ async function registerUser() {
 
     const data = await res.json();
     saveAuth(data.token, data.userName || userName);
-    passInput.value = '';
+    if (passInput) passInput.value = '';
     alert('Kayıt başarılı! Giriş yapıldı.');
   } catch (err) {
     console.error(err);
@@ -296,8 +293,7 @@ function logout() {
 }
 
 async function apiFetch(url, options = {}) {
-  const opts = { ...options };
-  opts.headers = opts.headers || {};
+  const opts = { ...options, headers: { ...(options.headers || {}) } };
 
   if (!opts.headers['Content-Type'] && opts.method && opts.method !== 'GET') {
     opts.headers['Content-Type'] = 'application/json';
@@ -310,9 +306,22 @@ async function apiFetch(url, options = {}) {
   return fetch(url, opts);
 }
 
+// -------------------- Books cache --------------------
+async function loadBooks() {
+  const res = await fetch(
+    `${API_BASE}/books?lang=${encodeURIComponent(currentLang)}`,
+  );
+  if (!res.ok) throw new Error('Books yüklenemedi');
+
+  booksCache = await res.json();
+  bookIndexByNumber = {};
+  booksCache.forEach((b, idx) => (bookIndexByNumber[b.bookNumber] = idx));
+}
+
+// -------------------- DOM + app init --------------------
 let searchInput, resultsDiv;
 
-// 🆕 keep track of timeouts used in displayResults
+// used in displayResults
 let pendingResultTimeouts = [];
 
 function clearPendingResults() {
@@ -320,7 +329,6 @@ function clearPendingResults() {
   pendingResultTimeouts = [];
 }
 
-// Initialize app when DOM is loaded
 document.addEventListener('DOMContentLoaded', function () {
   initializeApp();
   loadAuthFromStorage();
@@ -328,11 +336,9 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 function initializeApp() {
-  // Cache DOM elements
   searchInput = document.getElementById('searchInput');
   resultsDiv = document.getElementById('results');
 
-  // Set up event listeners
   setupEventListeners();
 
   const langSelect = document.getElementById('languageSelect');
@@ -341,29 +347,30 @@ function initializeApp() {
     langSelect.addEventListener('change', async () => {
       currentLang = langSelect.value;
       await loadBooks();
+      // optional: refresh current view if you want
     });
   }
-  loadBooks().catch(console.error);
 
-  // Load initial content
+  loadBooks().catch(console.error);
   loadInitialContent();
 }
 
 function setupEventListeners() {
-  // Enter key support for search
-  searchInput.addEventListener('keypress', function (e) {
-    if (e.key === 'Enter') {
-      performSearch();
-    }
-  });
+  if (searchInput) {
+    searchInput.addEventListener('keypress', function (e) {
+      if (e.key === 'Enter') performSearch();
+    });
 
-  // Real-time search suggestions (optional)
-  searchInput.addEventListener(
-    'input',
-    debounce(function (e) {
-      // Could add real-time suggestions here
-    }, 300),
-  );
+    searchInput.addEventListener(
+      'input',
+      debounce(function () {}, 300),
+    );
+  }
+
+  // (optional) expose auth actions if you use buttons
+  window.login = login;
+  window.registerUser = registerUser;
+  window.logout = logout;
 }
 
 function debounce(func, wait) {
@@ -378,23 +385,24 @@ function debounce(func, wait) {
   };
 }
 
-// Main search function
+// -------------------- Search logic --------------------
 async function performSearch() {
-  const query = searchInput.value.trim();
+  const query = (searchInput?.value || '').trim();
   if (!query) {
     showError('Lütfen bir arama terimi girin');
     return;
   }
-
   await search(query);
 }
 
 async function search(query) {
-  document.getElementById('searchInput').value = query;
-  showLoading('Aranıyor...');
+  if (document.getElementById('searchInput')) {
+    document.getElementById('searchInput').value = query;
+  }
+  showLoading(t('Aranıyor...', 'Searching...'));
 
   try {
-    // 1️⃣ FIRST: Check if it's a verse reference (e.g., "Yuhanna 15:16-18")
+    // 1) Verse reference (John 3:16-18)
     const verseRef = tryParseVerseReference(query);
     if (verseRef.isVerse) {
       await showVerseRange(
@@ -405,71 +413,63 @@ async function search(query) {
       return;
     }
 
-    // 2️⃣ SECOND: Check if it's a chapter reference (e.g., "Yuhanna 15")
+    // 2) Chapter reference (John 3)
     const chapterRef = tryParseChapterReference(query);
     if (chapterRef.isChapter) {
       await showChapter(chapterRef.bookName, chapterRef.chapter);
       return;
     }
 
-    // 3️⃣ Else: normal text search
+    // 3) Text search
     const response = await fetch(
-      `${API_BASE}/search?q=${encodeURIComponent(
-        query,
-      )}&lang=${encodeURIComponent(currentLang)}`,
+      `${API_BASE}/search?q=${encodeURIComponent(query)}&lang=${encodeURIComponent(currentLang)}`,
     );
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
     const verses = await response.json();
     if (!verses || verses.length === 0) {
-      showEmpty(`"${query}" için sonuç bulunamadı`);
+      showEmpty(`"${query}" ${t('için sonuç bulunamadı', 'has no results')}`);
       return;
     }
 
-    displayResults(verses, `Arama: "${query}"`);
+    displayResults(verses, `${t('Arama', 'Search')}: "${query}"`);
   } catch (error) {
     console.error('Search error:', error);
-    showError(`Arama sırasında hata oluştu: ${error.message}`);
+    showError(
+      `${t('Arama sırasında hata oluştu', 'Search failed')}: ${error.message}`,
+    );
   }
 }
 
+// ✅ keep digits (1 John etc.)
 function normalizeBookName(bookName) {
-  return bookName
+  return (bookName || '')
     .toLowerCase()
     .replace(/'/g, '')
     .replace(/\./g, '')
     .replace(/\s+/g, ' ')
-    .replace(/[^a-zğüşıöç\s]/g, '')
+    .replace(/[^0-9a-zğüşıöç\s]/g, '')
     .trim();
 }
 
 function tryParseChapterReference(input) {
-  const trimmed = input.trim();
+  const trimmed = (input || '').trim();
   console.log('Parsing chapter reference:', trimmed);
 
-  // If it has ":", it's not just a chapter reference
-  if (trimmed.includes(':')) {
+  if (!trimmed || trimmed.includes(':'))
     return { isChapter: false, bookName: '', chapter: 0 };
-  }
 
   const availableBooks = getCurrentBookList();
 
-  // split on last space → "John 1" / "Çölde Sayım 12"
   const lastSpace = trimmed.lastIndexOf(' ');
-  if (lastSpace === -1) {
-    return { isChapter: false, bookName: '', chapter: 0 };
-  }
+  if (lastSpace === -1) return { isChapter: false, bookName: '', chapter: 0 };
 
   const bookPart = trimmed.substring(0, lastSpace).trim();
   const chapterPart = trimmed.substring(lastSpace + 1).trim();
 
   const chapterNum = parseInt(chapterPart, 10);
-  if (isNaN(chapterNum)) {
-    return { isChapter: false, bookName: '', chapter: 0 };
-  }
+  if (isNaN(chapterNum)) return { isChapter: false, bookName: '', chapter: 0 };
 
   const normalizedInput = normalizeBookName(bookPart);
 
@@ -482,21 +482,19 @@ function tryParseChapterReference(input) {
       return nb.includes(normalizedInput) || normalizedInput.includes(nb);
     });
 
-  if (!matchedBook) {
-    return { isChapter: false, bookName: '', chapter: 0 };
-  }
+  if (!matchedBook) return { isChapter: false, bookName: '', chapter: 0 };
 
   console.log('✅ Chapter ref match:', matchedBook, chapterNum);
   return { isChapter: true, bookName: matchedBook, chapter: chapterNum };
 }
 
 function tryParseVerseReference(input) {
-  const trimmed = input.trim();
+  const trimmed = (input || '').trim();
   console.log('Parsing verse reference:', trimmed);
 
   const availableBooks = getCurrentBookList();
 
-  // Pattern: "BookName Number:NumberRange"  e.g. "John 3:16-18", "Çölde Sayım 12:3-5"
+  // BookName Chapter:VerseRange
   const pattern = /^([a-zA-ZĞÜŞİÖÇğüşiöç\s\d\.']+)\s+(\d+):([\d\-,]+)$/i;
   const match = trimmed.match(pattern);
 
@@ -504,7 +502,7 @@ function tryParseVerseReference(input) {
     const inputBookName = match[1].trim();
     const normalizedInput = normalizeBookName(inputBookName);
 
-    let matchedBook =
+    const matchedBook =
       availableBooks.find(
         (book) => normalizeBookName(book) === normalizedInput,
       ) ||
@@ -526,117 +524,138 @@ function tryParseVerseReference(input) {
   return { isVerse: false, bookName: '', chapter: 0, verseRange: '' };
 }
 
-// 🆕 VERSE RANGE FUNCTION (for references like "Yuhanna 17:1-5")
+// -------------------- API views --------------------
 async function showVerseRange(bookName, chapterNumber, verseRange) {
-  showLoading(`${bookName} ${chapterNumber}:${verseRange} yükleniyor...`);
+  showLoading(
+    `${bookName} ${chapterNumber}:${verseRange} ${t('yükleniyor...', 'loading...')}`,
+  );
 
   try {
     const response = await fetch(
       `${API_BASE}/${encodeURIComponent(bookName)}/${chapterNumber}/${encodeURIComponent(verseRange)}?lang=${encodeURIComponent(currentLang)}`,
     );
 
-    if (!response.ok) throw new Error('Ayet aralığı getirilemedi');
+    if (!response.ok)
+      throw new Error(
+        t('Ayet aralığı getirilemedi', 'Could not load verse range'),
+      );
 
     const verses = await response.json();
     displayResults(verses, `${bookName} ${chapterNumber}:${verseRange}`);
   } catch (error) {
-    showError(`Ayet aralığı getirilemedi: ${error.message}`);
+    showError(
+      `${t('Ayet aralığı getirilemedi', 'Could not load verse range')}: ${error.message}`,
+    );
   }
 }
 
-// Random verse function
 async function getRandomVerse() {
-  showLoading('Rastgele ayet getiriliyor...');
+  showLoading(t('Rastgele ayet getiriliyor...', 'Loading random verse...'));
 
   try {
     const response = await fetch(
       `${API_BASE}/random?lang=${encodeURIComponent(currentLang)}`,
     );
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
     const verse = await response.json();
-    displayResults([verse], 'Rastgele Ayet');
+    displayResults([verse], t('Rastgele Ayet', 'Random Verse'));
   } catch (error) {
     console.error('Random verse error:', error);
-    showError(`Rastgele ayet getirilemedi: ${error.message}`);
+    showError(
+      `${t('Rastgele ayet getirilemedi', 'Could not load random verse')}: ${error.message}`,
+    );
   }
 }
 
+// -------------------- Rendering: search results --------------------
 function displayResults(verses, title) {
-  // 🆕 clear any previous animations before starting new ones
   clearPendingResults();
 
   resultsDiv.innerHTML = `
-        <div class="results-header">
-            ${title} • ${verses.length} sonuç
-        </div>
-    `;
+    <div class="results-header">
+      ${escapeHtml(title)} • ${Array.isArray(verses) ? verses.length : 0} ${t('sonuç', 'results')}
+    </div>
+  `;
 
-  verses.forEach((verse, index) => {
+  (verses || []).forEach((verse, index) => {
     const id = setTimeout(() => {
-      const verseElement = createVerseElement(verse);
-      resultsDiv.appendChild(verseElement);
-    }, index * 100);
-
-    // 🆕 remember timeout id so we can cancel it later
+      resultsDiv.appendChild(createVerseElement(verse));
+    }, index * 60);
     pendingResultTimeouts.push(id);
   });
 }
 
-// individual verse create
 function createVerseElement(verse) {
   const verseElement = document.createElement('div');
   verseElement.className = 'verse';
+
+  // ✅ No inline onclick strings => no syntax errors
   verseElement.innerHTML = `
     <div class="verse-reference">
-      ${escapeHtml(verse.bookName)} ${verse.chapterNumber}:${verse.verseNumber}
+      ${escapeHtml(verse.bookName)} ${escapeHtml(String(verse.chapterNumber))}:${escapeHtml(String(verse.verseNumber))}
     </div>
-    <div class="verse-text">${escapeHtml(verse.text)}</div>
+    <div class="verse-text">${escapeHtml(verse.text || '')}</div>
+
     <div class="verse-actions">
-      <button class="btn-small btn-success"
-              onclick="showChapter(${jsString(verse.bookName)}, ${verse.chapterNumber})">
-        📚 Tüm Bölümü Oku
+      <button class="btn-small btn-success js-read-chapter">
+        📚 ${t('Tüm Bölümü Oku', 'Read Chapter')}
       </button>
-      <button class="btn-small btn-warning"
-              onclick="showVerseContext(${jsString(verse.bookName)}, ${verse.chapterNumber}, ${verse.verseNumber})">
-        🔍 Bağlamında Gör
+      <button class="btn-small btn-warning js-view-context">
+        🔍 ${t('Bağlamında Gör', 'View Context')}
       </button>
     </div>
   `;
+
+  verseElement
+    .querySelector('.js-read-chapter')
+    ?.addEventListener('click', () => {
+      showChapter(verse.bookName, verse.chapterNumber);
+    });
+
+  verseElement
+    .querySelector('.js-view-context')
+    ?.addEventListener('click', () => {
+      showVerseContext(verse.bookName, verse.chapterNumber, verse.verseNumber);
+    });
+
   return verseElement;
 }
 
-// Show entire chapter as reading view
+// -------------------- Chapter reading view + side arrows --------------------
 async function showChapter(bookName, chapterNumber) {
-  showLoading(`${bookName} ${chapterNumber}. bölüm yükleniyor...`);
+  showLoading(
+    `${bookName} ${chapterNumber}. ${t('bölüm yükleniyor...', 'chapter loading...')}`,
+  );
 
   try {
     const response = await fetch(
       `${API_BASE}/${encodeURIComponent(bookName)}/${chapterNumber}?lang=${encodeURIComponent(currentLang)}`,
     );
 
-    if (!response.ok) throw new Error('Bölüm getirilemedi');
+    if (!response.ok)
+      throw new Error(t('Bölüm getirilemedi', 'Could not load chapter'));
 
     const verses = await response.json();
     displayChapterView(verses, bookName, chapterNumber);
   } catch (error) {
-    showError(`Bölüm getirilemedi: ${error.message}`);
+    showError(
+      `${t('Bölüm getirilemedi', 'Could not load chapter')}: ${error.message}`,
+    );
   }
 }
 
-// Show verse with context (surrounding verses)
 async function showVerseContext(bookName, chapterNumber, verseNumber) {
-  showLoading('Ayet bağlamı yükleniyor...');
+  showLoading(t('Ayet bağlamı yükleniyor...', 'Loading context...'));
 
   try {
     const response = await fetch(
       `${API_BASE}/${encodeURIComponent(bookName)}/${chapterNumber}?lang=${encodeURIComponent(currentLang)}`,
     );
 
-    if (!response.ok) throw new Error('Ayet bağlamı getirilemedi');
+    if (!response.ok)
+      throw new Error(t('Ayet bağlamı getirilemedi', 'Could not load context'));
 
     const allVerses = await response.json();
     displayContextView(
@@ -646,81 +665,22 @@ async function showVerseContext(bookName, chapterNumber, verseNumber) {
       parseInt(verseNumber, 10),
     );
   } catch (error) {
-    showError(`Ayet bağlamı getirilemedi: ${error.message}`);
+    showError(
+      `${t('Ayet bağlamı getirilemedi', 'Could not load context')}: ${error.message}`,
+    );
   }
-}
-
-function t(trText, enText) {
-  return currentLang === 'en' ? enText : trText;
-}
-
-let chapterNavEl = null;
-let chapterNavPrevBtn = null;
-let chapterNavNextBtn = null;
-
-// Create floating nav ONCE
-function ensureChapterNav() {
-  if (chapterNavEl) return;
-
-  chapterNavEl = document.createElement('div');
-  chapterNavEl.id = 'chapterNavFloating';
-  chapterNavEl.className = 'chapter-nav-floating';
-  chapterNavEl.innerHTML = `
-    <button class="btn btn-secondary" id="prevChapterBtn">← ${t('Önceki', 'Prev')}</button>
-    <button class="btn btn-secondary" id="nextChapterBtn">${t('Sonraki', 'Next')} →</button>
-  `;
-  document.body.appendChild(chapterNavEl);
-
-  chapterNavPrevBtn = chapterNavEl.querySelector('#prevChapterBtn');
-  chapterNavNextBtn = chapterNavEl.querySelector('#nextChapterBtn');
-
-  // Attach listeners ONCE (we change targets by setting ._target)
-  chapterNavPrevBtn.addEventListener('click', () => {
-    const tgt = chapterNavPrevBtn._target;
-    if (!tgt) return;
-    showChapter(tgt.bookName, tgt.chapterNumber);
-  });
-
-  chapterNavNextBtn.addEventListener('click', () => {
-    const tgt = chapterNavNextBtn._target;
-    if (!tgt) return;
-    showChapter(tgt.bookName, tgt.chapterNumber);
-  });
-}
-
-function showChapterNav(show) {
-  ensureChapterNav();
-  chapterNavEl.style.display = show ? 'flex' : 'none';
-
-  // Update button labels on language change
-  if (show) {
-    chapterNavPrevBtn.textContent = `← ${t('Önceki', 'Prev')}`;
-    chapterNavNextBtn.textContent = `${t('Sonraki', 'Next')} →`;
-  }
-}
-
-// IMPORTANT: allow digits in normalization ("1 John", "2 Samuel", etc.)
-function normalizeBookName(bookName) {
-  return (bookName || '')
-    .toLowerCase()
-    .replace(/'/g, '')
-    .replace(/\./g, '')
-    .replace(/\s+/g, ' ')
-    .replace(/[^0-9a-zğüşıöç\s]/g, '') // ✅ keep digits
-    .trim();
 }
 
 function displayChapterView(verses, bookName, chapterNumber) {
   clearPendingResults();
 
-  // ✅ DEDUPE: if API ever returns duplicates, remove them
+  // ✅ Remove duplicates if API returns them
   const uniqueVerses = dedupeVersesByNumber(verses);
-
   const bookNumber = uniqueVerses?.[0]?.bookNumber;
 
   resultsDiv.innerHTML = `
     <div class="chapter-header">
-      <h2>${escapeHtml(bookName)} ${chapterNumber}. ${t('Bölüm', 'Chapter')}</h2>
+      <h2>${escapeHtml(bookName)} ${escapeHtml(String(chapterNumber))}. ${t('Bölüm', 'Chapter')}</h2>
       <button class="btn btn-primary" id="backToSearchBtn">
         ← ${t("Arama'ya Dön", 'Back to Search')}
       </button>
@@ -730,145 +690,128 @@ function displayChapterView(verses, bookName, chapterNumber) {
       ${uniqueVerses
         .map(
           (v) => `
-          <div class="verse-in-chapter" id="verse-${v.verseNumber}">
-            <span class="verse-number">${v.verseNumber}</span>
-            <span class="verse-text">${escapeHtml(v.text)}</span>
+          <div class="verse-in-chapter" id="verse-${escapeHtml(String(v.verseNumber))}">
+            <span class="verse-number">${escapeHtml(String(v.verseNumber))}</span>
+            <span class="verse-text">${escapeHtml(v.text || '')}</span>
           </div>
         `,
         )
         .join('')}
     </div>
 
-    <!-- ✅ Side arrows (always visible while reading) -->
-    <button id="prevChapterBtn" class="chapter-nav-arrow left" aria-label="${t(
-      'Önceki bölüm',
-      'Previous chapter',
-    )}">
-      ‹
-    </button>
-
-    <button id="nextChapterBtn" class="chapter-nav-arrow right" aria-label="${t(
-      'Sonraki bölüm',
-      'Next chapter',
-    )}">
-      ›
-    </button>
+    <!-- Side arrows -->
+    <button id="prevChapterArrow" class="chapter-nav-arrow left" aria-label="${t('Önceki bölüm', 'Previous chapter')}">‹</button>
+    <button id="nextChapterArrow" class="chapter-nav-arrow right" aria-label="${t('Sonraki bölüm', 'Next chapter')}">›</button>
   `;
 
-  // Back button
   document.getElementById('backToSearchBtn')?.addEventListener('click', () => {
     loadInitialContent();
   });
 
-  // If we can't compute navigation, hide arrows
+  // compute navigation
+  const prevBtn = document.getElementById('prevChapterArrow');
+  const nextBtn = document.getElementById('nextChapterArrow');
+
   if (bookNumber == null || booksCache.length === 0) {
-    hideChapterNavArrows();
+    if (prevBtn) prevBtn.style.display = 'none';
+    if (nextBtn) nextBtn.style.display = 'none';
     return;
   }
 
   const idx = bookIndexByNumber[bookNumber];
   if (idx == null) {
-    hideChapterNavArrows();
+    if (prevBtn) prevBtn.style.display = 'none';
+    if (nextBtn) nextBtn.style.display = 'none';
     return;
   }
 
-  // Compute prev
-  let prevBook = booksCache[idx];
+  // prev target
+  let prevBookObj = booksCache[idx];
   let prevChapter = chapterNumber - 1;
 
   if (prevChapter < 1) {
-    const prevBookObj = booksCache[idx - 1];
-    if (prevBookObj) {
-      prevBook = prevBookObj;
-      prevChapter = prevBookObj.totalChapters;
+    const prevBook = booksCache[idx - 1];
+    if (prevBook) {
+      prevBookObj = prevBook;
+      prevChapter = prevBook.totalChapters;
     } else {
-      prevBook = null; // ✅ first book + first chapter => no prev
+      prevBookObj = null; // first book + first chapter => no prev
     }
   }
 
-  // Compute next
-  let nextBook = booksCache[idx];
+  // next target
+  let nextBookObj = booksCache[idx];
   let nextChapter = chapterNumber + 1;
 
-  if (nextBook && nextChapter > nextBook.totalChapters) {
-    const nextBookObj = booksCache[idx + 1];
-    if (nextBookObj) {
-      nextBook = nextBookObj;
+  if (nextBookObj && nextChapter > nextBookObj.totalChapters) {
+    const nextBook = booksCache[idx + 1];
+    if (nextBook) {
+      nextBookObj = nextBook;
       nextChapter = 1;
     } else {
-      nextBook = null; // ✅ last book + last chapter => no next
+      nextBookObj = null; // last book + last chapter => no next
     }
   }
 
-  // Wire arrows + hide if not available
-  const prevBtn = document.getElementById('prevChapterBtn');
-  const nextBtn = document.getElementById('nextChapterBtn');
-
-  if (prevBook && prevBtn) {
+  // wire + hide if missing
+  if (prevBookObj && prevBtn) {
     prevBtn.style.display = 'flex';
-    prevBtn.onclick = () => showChapter(prevBook.name, prevChapter);
+    prevBtn.onclick = () => showChapter(prevBookObj.name, prevChapter);
   } else if (prevBtn) {
-    prevBtn.style.display = 'none'; // ✅ remove “Önceki” on Matthew 1 etc.
+    prevBtn.style.display = 'none';
   }
 
-  if (nextBook && nextBtn) {
+  if (nextBookObj && nextBtn) {
     nextBtn.style.display = 'flex';
-    nextBtn.onclick = () => showChapter(nextBook.name, nextChapter);
+    nextBtn.onclick = () => showChapter(nextBookObj.name, nextChapter);
   } else if (nextBtn) {
     nextBtn.style.display = 'none';
   }
 }
 
-function hideChapterNavArrows() {
-  const prevBtn = document.getElementById('prevChapterBtn');
-  const nextBtn = document.getElementById('nextChapterBtn');
-  if (prevBtn) prevBtn.style.display = 'none';
-  if (nextBtn) nextBtn.style.display = 'none';
-}
-
-/** ✅ removes duplicates like 1,1,2,2,3,3 */
-function dedupeVersesByNumber(verses) {
-  if (!Array.isArray(verses)) return [];
-  const map = new Map();
-  for (const v of verses) {
-    // keep first occurrence of each verseNumber
-    if (v && !map.has(v.verseNumber)) map.set(v.verseNumber, v);
-  }
-  return Array.from(map.values()).sort((a, b) => a.verseNumber - b.verseNumber);
-}
-
-// Display verse with highlighted context
+// -------------------- Context view --------------------
 function displayContextView(verses, bookName, chapterNumber, targetVerse) {
   clearPendingResults();
 
-  const safeBook = jsString(bookName); // ✅ safe for quotes/apostrophes
+  const unique = dedupeVersesByNumber(verses);
 
   resultsDiv.innerHTML = `
     <div class="context-header">
-      <h2>${jsString(bookName)} ${chapterNumber}:${targetVerse} - ${t('Bağlam', 'Context')}</h2>
-      <button class="btn btn-primary" onclick="loadInitialContent()">
+      <h2>${escapeHtml(bookName)} ${escapeHtml(String(chapterNumber))}:${escapeHtml(String(targetVerse))} — ${t('Bağlam', 'Context')}</h2>
+
+      <button class="btn btn-primary" id="backToSearchBtn2">
         ← ${t("Arama'ya Dön", 'Back to Search')}
       </button>
-      <button class="btn btn-secondary" onclick="showChapter(${safeBook}, ${chapterNumber})">
+
+      <button class="btn btn-secondary" id="readFullChapterBtn">
         ${t('Tüm Bölümü Oku', 'Read Full Chapter')}
       </button>
     </div>
 
     <div class="context-content">
-      ${dedupeVersesByNumber(verses)
+      ${unique
         .map(
           (v) => `
-          <div class="verse-in-context ${
-            v.verseNumber === targetVerse ? 'highlighted-verse' : ''
-          }" id="verse-${v.verseNumber}">
-            <span class="verse-number">${v.verseNumber}</span>
-            <span class="verse-text">${escapeHtml(v.text)}</span>
+          <div class="verse-in-context ${v.verseNumber === targetVerse ? 'highlighted-verse' : ''}"
+               id="verse-${escapeHtml(String(v.verseNumber))}">
+            <span class="verse-number">${escapeHtml(String(v.verseNumber))}</span>
+            <span class="verse-text">${escapeHtml(v.text || '')}</span>
           </div>
         `,
         )
         .join('')}
     </div>
   `;
+
+  document.getElementById('backToSearchBtn2')?.addEventListener('click', () => {
+    loadInitialContent();
+  });
+
+  document
+    .getElementById('readFullChapterBtn')
+    ?.addEventListener('click', () => {
+      showChapter(bookName, chapterNumber);
+    });
 
   setTimeout(() => {
     document
@@ -877,55 +820,67 @@ function displayContextView(verses, bookName, chapterNumber, targetVerse) {
   }, 100);
 }
 
-// UI State functions
-function showLoading(message = 'Yükleniyor...') {
+// -------------------- UI states --------------------
+function showLoading(message = t('Yükleniyor...', 'Loading...')) {
   clearPendingResults();
   resultsDiv.innerHTML = `
-        <div class="loading">
-            <div>⏳ ${message}</div>
-        </div>
-    `;
+    <div class="loading">
+      <div>⏳ ${escapeHtml(message)}</div>
+    </div>
+  `;
 }
 
 function showError(message) {
   clearPendingResults();
   resultsDiv.innerHTML = `
-        <div class="error">
-            <div>❌ ${message}</div>
-            <button class="btn-small btn-primary" onclick="loadInitialContent()" style="margin-top: 10px;">
-                Tekrar Dene
-            </button>
-        </div>
-    `;
+    <div class="error">
+      <div>❌ ${escapeHtml(message)}</div>
+      <button class="btn-small btn-primary" id="retryBtn" style="margin-top: 10px;">
+        ${t('Tekrar Dene', 'Retry')}
+      </button>
+    </div>
+  `;
+  document
+    .getElementById('retryBtn')
+    ?.addEventListener('click', () => loadInitialContent());
 }
 
 function showEmpty(message) {
   clearPendingResults();
   resultsDiv.innerHTML = `
-        <div class="empty">
-            <div>🔍 ${message}</div>
-            <button class="btn-small btn-primary" onclick="getRandomVerse()" style="margin-top: 10px;">
-                Rastgele Ayet Göster
-            </button>
-        </div>
-    `;
+    <div class="empty">
+      <div>🔍 ${escapeHtml(message)}</div>
+      <button class="btn-small btn-primary" id="randomBtn" style="margin-top: 10px;">
+        ${t('Rastgele Ayet Göster', 'Show Random Verse')}
+      </button>
+    </div>
+  `;
+  document
+    .getElementById('randomBtn')
+    ?.addEventListener('click', () => getRandomVerse());
 }
 
-// Initial content
 function loadInitialContent() {
-  showLoading('Yükleniyor...');
+  showLoading(t('Yükleniyor...', 'Loading...'));
   setTimeout(() => {
     search('tanrı');
-  }, 1000);
+  }, 350);
 }
 
-function jsString(value) {
-  return JSON.stringify(value ?? '');
+// -------------------- Helpers --------------------
+/** Removes duplicates like 1,1,2,2,3,3 */
+function dedupeVersesByNumber(verses) {
+  if (!Array.isArray(verses)) return [];
+  const map = new Map();
+  for (const v of verses) {
+    if (v && !map.has(v.verseNumber)) map.set(v.verseNumber, v);
+  }
+  return Array.from(map.values()).sort((a, b) => a.verseNumber - b.verseNumber);
 }
 
-// Utility function to escape HTML
 function escapeHtml(unsafe) {
-  return unsafe
+  const s = String(unsafe ?? '');
+  return s
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -933,10 +888,13 @@ function escapeHtml(unsafe) {
     .replace(/'/g, '&#039;');
 }
 
-// Make functions globally available
+// -------------------- Expose globals used by HTML --------------------
 window.performSearch = performSearch;
 window.search = search;
 window.getRandomVerse = getRandomVerse;
 window.showChapter = showChapter;
 window.showVerseContext = showVerseContext;
 window.loadInitialContent = loadInitialContent;
+window.login = login;
+window.registerUser = registerUser;
+window.logout = logout;
