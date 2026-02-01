@@ -650,127 +650,230 @@ async function showVerseContext(bookName, chapterNumber, verseNumber) {
   }
 }
 
-// Display entire chapter as reading view
+function t(trText, enText) {
+  return currentLang === 'en' ? enText : trText;
+}
+
+let chapterNavEl = null;
+let chapterNavPrevBtn = null;
+let chapterNavNextBtn = null;
+
+// Create floating nav ONCE
+function ensureChapterNav() {
+  if (chapterNavEl) return;
+
+  chapterNavEl = document.createElement('div');
+  chapterNavEl.id = 'chapterNavFloating';
+  chapterNavEl.className = 'chapter-nav-floating';
+  chapterNavEl.innerHTML = `
+    <button class="btn btn-secondary" id="prevChapterBtn">← ${t('Önceki', 'Prev')}</button>
+    <button class="btn btn-secondary" id="nextChapterBtn">${t('Sonraki', 'Next')} →</button>
+  `;
+  document.body.appendChild(chapterNavEl);
+
+  chapterNavPrevBtn = chapterNavEl.querySelector('#prevChapterBtn');
+  chapterNavNextBtn = chapterNavEl.querySelector('#nextChapterBtn');
+
+  // Attach listeners ONCE (we change targets by setting ._target)
+  chapterNavPrevBtn.addEventListener('click', () => {
+    const tgt = chapterNavPrevBtn._target;
+    if (!tgt) return;
+    showChapter(tgt.bookName, tgt.chapterNumber);
+  });
+
+  chapterNavNextBtn.addEventListener('click', () => {
+    const tgt = chapterNavNextBtn._target;
+    if (!tgt) return;
+    showChapter(tgt.bookName, tgt.chapterNumber);
+  });
+}
+
+function showChapterNav(show) {
+  ensureChapterNav();
+  chapterNavEl.style.display = show ? 'flex' : 'none';
+
+  // Update button labels on language change
+  if (show) {
+    chapterNavPrevBtn.textContent = `← ${t('Önceki', 'Prev')}`;
+    chapterNavNextBtn.textContent = `${t('Sonraki', 'Next')} →`;
+  }
+}
+
+// IMPORTANT: allow digits in normalization ("1 John", "2 Samuel", etc.)
+function normalizeBookName(bookName) {
+  return (bookName || '')
+    .toLowerCase()
+    .replace(/'/g, '')
+    .replace(/\./g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/[^0-9a-zğüşıöç\s]/g, '') // ✅ keep digits
+    .trim();
+}
+
 function displayChapterView(verses, bookName, chapterNumber) {
   clearPendingResults();
 
-  // We can read bookNumber from the first verse
-  const bookNumber = verses?.[0]?.bookNumber;
+  // ✅ DEDUPE: if API ever returns duplicates, remove them
+  const uniqueVerses = dedupeVersesByNumber(verses);
 
-  let prevBtn = '';
-  let nextBtn = '';
-
-  if (bookNumber != null && booksCache.length > 0) {
-    const idx = bookIndexByNumber[bookNumber];
-
-    // Prev chapter logic
-    let prevBook = booksCache[idx];
-    let prevChapter = chapterNumber - 1;
-
-    if (prevChapter < 1) {
-      // go to previous book last chapter
-      const prevBookObj = booksCache[idx - 1];
-      if (prevBookObj) {
-        prevBook = prevBookObj;
-        prevChapter = prevBookObj.totalChapters;
-      } else {
-        prevBook = null;
-      }
-    }
-
-    if (prevBook) {
-      prevBtn = `
-    <button class="btn btn-secondary"
-      onclick="showChapter(${JSON.stringify(prevBook.name)}, ${prevChapter})">
-      ← Önceki Bölüm
-    </button>`;
-    }
-
-    // Next chapter logic
-    let nextBook = booksCache[idx];
-    let nextChapter = chapterNumber + 1;
-
-    if (nextBook && nextChapter > nextBook.totalChapters) {
-      // go to next book chapter 1
-      const nextBookObj = booksCache[idx + 1];
-      if (nextBookObj) {
-        nextBook = nextBookObj;
-        nextChapter = 1;
-      } else {
-        nextBook = null;
-      }
-    }
-
-    if (nextBook) {
-      nextBtn = `
-    <button class="btn btn-secondary"
-      onclick="showChapter(${JSON.stringify(nextBook.name)}, ${nextChapter})">
-      Sonraki Bölüm →
-    </button>`;
-    }
-  }
+  const bookNumber = uniqueVerses?.[0]?.bookNumber;
 
   resultsDiv.innerHTML = `
     <div class="chapter-header">
-      <h2>${bookName} ${chapterNumber}. Bölüm</h2>
-      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
-        <button class="btn btn-primary" onclick="loadInitialContent()">← Arama'ya Dön</button>
-        ${prevBtn}
-        ${nextBtn}
-      </div>
+      <h2>${escapeHtml(bookName)} ${chapterNumber}. ${t('Bölüm', 'Chapter')}</h2>
+      <button class="btn btn-primary" id="backToSearchBtn">
+        ← ${t("Arama'ya Dön", 'Back to Search')}
+      </button>
     </div>
 
     <div class="chapter-content">
-      ${verses
+      ${uniqueVerses
         .map(
-          (verse) => `
-          <div class="verse-in-chapter" id="verse-${verse.verseNumber}">
-            <span class="verse-number">${verse.verseNumber}</span>
-            <span class="verse-text">${escapeHtml(verse.text)}</span>
+          (v) => `
+          <div class="verse-in-chapter" id="verse-${v.verseNumber}">
+            <span class="verse-number">${v.verseNumber}</span>
+            <span class="verse-text">${escapeHtml(v.text)}</span>
+          </div>
+        `,
+        )
+        .join('')}
+    </div>
+
+    <!-- ✅ Side arrows (always visible while reading) -->
+    <button id="prevChapterBtn" class="chapter-nav-arrow left" aria-label="${t(
+      'Önceki bölüm',
+      'Previous chapter',
+    )}">
+      ‹
+    </button>
+
+    <button id="nextChapterBtn" class="chapter-nav-arrow right" aria-label="${t(
+      'Sonraki bölüm',
+      'Next chapter',
+    )}">
+      ›
+    </button>
+  `;
+
+  // Back button
+  document.getElementById('backToSearchBtn')?.addEventListener('click', () => {
+    loadInitialContent();
+  });
+
+  // If we can't compute navigation, hide arrows
+  if (bookNumber == null || booksCache.length === 0) {
+    hideChapterNavArrows();
+    return;
+  }
+
+  const idx = bookIndexByNumber[bookNumber];
+  if (idx == null) {
+    hideChapterNavArrows();
+    return;
+  }
+
+  // Compute prev
+  let prevBook = booksCache[idx];
+  let prevChapter = chapterNumber - 1;
+
+  if (prevChapter < 1) {
+    const prevBookObj = booksCache[idx - 1];
+    if (prevBookObj) {
+      prevBook = prevBookObj;
+      prevChapter = prevBookObj.totalChapters;
+    } else {
+      prevBook = null; // ✅ first book + first chapter => no prev
+    }
+  }
+
+  // Compute next
+  let nextBook = booksCache[idx];
+  let nextChapter = chapterNumber + 1;
+
+  if (nextBook && nextChapter > nextBook.totalChapters) {
+    const nextBookObj = booksCache[idx + 1];
+    if (nextBookObj) {
+      nextBook = nextBookObj;
+      nextChapter = 1;
+    } else {
+      nextBook = null; // ✅ last book + last chapter => no next
+    }
+  }
+
+  // Wire arrows + hide if not available
+  const prevBtn = document.getElementById('prevChapterBtn');
+  const nextBtn = document.getElementById('nextChapterBtn');
+
+  if (prevBook && prevBtn) {
+    prevBtn.style.display = 'flex';
+    prevBtn.onclick = () => showChapter(prevBook.name, prevChapter);
+  } else if (prevBtn) {
+    prevBtn.style.display = 'none'; // ✅ remove “Önceki” on Matthew 1 etc.
+  }
+
+  if (nextBook && nextBtn) {
+    nextBtn.style.display = 'flex';
+    nextBtn.onclick = () => showChapter(nextBook.name, nextChapter);
+  } else if (nextBtn) {
+    nextBtn.style.display = 'none';
+  }
+}
+
+function hideChapterNavArrows() {
+  const prevBtn = document.getElementById('prevChapterBtn');
+  const nextBtn = document.getElementById('nextChapterBtn');
+  if (prevBtn) prevBtn.style.display = 'none';
+  if (nextBtn) nextBtn.style.display = 'none';
+}
+
+/** ✅ removes duplicates like 1,1,2,2,3,3 */
+function dedupeVersesByNumber(verses) {
+  if (!Array.isArray(verses)) return [];
+  const map = new Map();
+  for (const v of verses) {
+    // keep first occurrence of each verseNumber
+    if (v && !map.has(v.verseNumber)) map.set(v.verseNumber, v);
+  }
+  return Array.from(map.values()).sort((a, b) => a.verseNumber - b.verseNumber);
+}
+
+// Display verse with highlighted context
+function displayContextView(verses, bookName, chapterNumber, targetVerse) {
+  clearPendingResults();
+
+  const safeBook = jsString(bookName); // ✅ safe for quotes/apostrophes
+
+  resultsDiv.innerHTML = `
+    <div class="context-header">
+      <h2>${escapeHtml(bookName)} ${chapterNumber}:${targetVerse} - ${t('Bağlam', 'Context')}</h2>
+      <button class="btn btn-primary" onclick="loadInitialContent()">
+        ← ${t("Arama'ya Dön", 'Back to Search')}
+      </button>
+      <button class="btn btn-secondary" onclick="showChapter(${safeBook}, ${chapterNumber})">
+        ${t('Tüm Bölümü Oku', 'Read Full Chapter')}
+      </button>
+    </div>
+
+    <div class="context-content">
+      ${dedupeVersesByNumber(verses)
+        .map(
+          (v) => `
+          <div class="verse-in-context ${
+            v.verseNumber === targetVerse ? 'highlighted-verse' : ''
+          }" id="verse-${v.verseNumber}">
+            <span class="verse-number">${v.verseNumber}</span>
+            <span class="verse-text">${escapeHtml(v.text)}</span>
           </div>
         `,
         )
         .join('')}
     </div>
   `;
-}
 
-// Display verse with highlighted context
-function displayContextView(verses, bookName, chapterNumber, targetVerse) {
-  clearPendingResults();
-  resultsDiv.innerHTML = `
-        <div class="context-header">
-            <h2>${bookName} ${chapterNumber}:${targetVerse} - Bağlam</h2>
-            <button class="btn btn-primary" onclick="loadInitialContent()">← Arama'ya Dön</button>
-            <button class="btn btn-secondary" onclick="showChapter('${escapeHtml(
-              bookName,
-            )}', ${chapterNumber})">
-                Tüm Bölümü Oku
-            </button>
-        </div>
-        <div class="context-content">
-            ${verses
-              .map(
-                (verse) => `
-                <div class="verse-in-context ${
-                  verse.verseNumber === targetVerse ? 'highlighted-verse' : ''
-                }" 
-                     id="verse-${verse.verseNumber}">
-                    <span class="verse-number">${verse.verseNumber}</span>
-                    <span class="verse-text">${escapeHtml(verse.text)}</span>
-                </div>
-            `,
-              )
-              .join('')}
-        </div>
-    `;
-
-  // Scroll to the target verse
   setTimeout(() => {
-    const targetElement = document.getElementById(`verse-${targetVerse}`);
-    if (targetElement) {
-      targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
+    document
+      .getElementById(`verse-${targetVerse}`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, 100);
 }
 

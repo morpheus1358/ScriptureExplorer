@@ -400,29 +400,26 @@ namespace ScriptureExplorer.Services
             if (string.IsNullOrWhiteSpace(text))
                 return string.Empty;
 
-            // Common BOM / replacement junk
-            text = text.Replace("\ufeff", "");   // BOM
-            text = text.Replace("ï»¿", "");      // BOM-as-text
-            text = text.Replace("¶", "");
+            // Remove BOM / replacement artifacts
+            text = text.Replace("\ufeff", "")
+                       .Replace("ï»¿", "")
+                       .Replace("�", "")
+                       .Replace("¶", "");
 
-            // If a file contains true Unicode replacement chars, remove them too.
-            text = text.Replace("�", "");
+            // Strip outer quotes + unescape double quotes
+            text = text.Trim()
+                       .Trim('"')
+                       .Replace("\"\"", "\"");
 
-            // Unquote & unescape
-            text = text.Trim().Trim('"').Replace("\"\"", "\"");
-
-            // ✅ Strip any leading Unicode control/format chars that can eat the first visible word
-            // \p{C} = control + formatting + surrogate + private-use + unassigned
-            text = Regex.Replace(text, @"^\p{C}+", "");
-
-            // Also strip leftover weird leading punctuation/spaces
-            text = Regex.Replace(text, @"^[\s\p{P}]+", "");
+            // ✅ Convert [That] -> That (keep content, drop brackets)
+            text = Regex.Replace(text, @"\[(?<w>[^\]]+)\]", "${w}");
 
             // Normalize whitespace
             text = Regex.Replace(text, @"\s+", " ").Trim();
 
             return text;
         }
+
 
 
 
