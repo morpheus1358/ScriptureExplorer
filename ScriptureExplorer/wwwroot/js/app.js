@@ -13,6 +13,28 @@ const APP_NAME = 'ScriptureExplorer - Türkçe Kutsal Kitap';
 let currentLang = 'tr';
 let booksCache = []; // books for current language
 let bookIndexByNumber = {}; // bookNumber -> index in booksCache
+let parallelMode = false;
+let parallelSecondaryLang = 'en'; // default
+
+let booksCacheByLang = {
+  tr: { books: [], indexByNumber: {} },
+  en: { books: [], indexByNumber: {} },
+};
+
+async function loadBooksForLang(lang) {
+  const res = await fetch(`${API_BASE}/books?lang=${encodeURIComponent(lang)}`);
+  if (!res.ok) throw new Error(`Books yüklenemedi (${lang})`);
+  const books = await res.json();
+  const indexByNumber = {};
+  books.forEach((b, idx) => (indexByNumber[b.bookNumber] = idx));
+  booksCacheByLang[lang] = { books, indexByNumber };
+}
+
+async function ensureBooksLoaded(lang) {
+  if (!booksCacheByLang[lang]?.books?.length) {
+    await loadBooksForLang(lang);
+  }
+}
 
 // Book lists for parsing references
 const BOOKS_TR = [
@@ -308,14 +330,10 @@ async function apiFetch(url, options = {}) {
 
 // -------------------- Books cache --------------------
 async function loadBooks() {
-  const res = await fetch(
-    `${API_BASE}/books?lang=${encodeURIComponent(currentLang)}`,
-  );
-  if (!res.ok) throw new Error('Books yüklenemedi');
-
-  booksCache = await res.json();
-  bookIndexByNumber = {};
-  booksCache.forEach((b, idx) => (bookIndexByNumber[b.bookNumber] = idx));
+  await loadBooksForLang(currentLang);
+  // keep compatibility with your existing navigation code:
+  booksCache = booksCacheByLang[currentLang].books;
+  bookIndexByNumber = booksCacheByLang[currentLang].indexByNumber;
 }
 
 // -------------------- DOM + app init --------------------
@@ -348,6 +366,17 @@ function initializeApp() {
       currentLang = langSelect.value;
       await loadBooks();
       // optional: refresh current view if you want
+    });
+  }
+
+  const parallelToggle = document.getElementById('parallelToggle');
+  if (parallelToggle) {
+    parallelToggle.checked = parallelMode;
+    parallelToggle.addEventListener('change', () => {
+      parallelMode = parallelToggle.checked;
+
+      // auto choose the "other" language as secondary
+      parallelSecondaryLang = currentLang === 'tr' ? 'en' : 'tr';
     });
   }
 
@@ -630,20 +659,105 @@ async function showChapter(bookName, chapterNumber) {
   );
 
   try {
-    const response = await fetch(
-      `${API_BASE}/${encodeURIComponent(bookName)}/${chapterNumber}?lang=${encodeURIComponent(currentLang)}`,
+    // Always load primary first (currentLang)
+    const primaryUrl =
+      `${API_BASE}/${encodeURIComponent(bookName)}/${chapterNumber}` +
+      `?lang=${encodeURIComponent(currentLang)}`;
+
+    const primaryRes = await fetch(primaryUrl);
+    if (!primaryRes.ok)
+      throw new Error(t('Bölüm getirilemedi', 'Could not load chapter'));
+    const primaryVerses = await primaryRes.json();
+
+    // Normal mode
+    if (!parallelMode) {
+      displayChapterView(primaryVerses, bookName, chapterNumber);
+      return;
+    }
+
+    // Parallel mode: figure out secondary lang
+    const primaryLang = currentLang;
+    const secondaryLang =
+      parallelSecondaryLang === primaryLang
+        ? primaryLang === 'en'
+          ? 'tr'
+          : 'en'
+        : parallelSecondaryLang;
+
+    // Need secondary book name by bookNumber
+    const bookNumber = primaryVerses?.[0]?.bookNumber;
+    if (!bookNumber) {
+      // fallback: just show primary
+      displayChapterView(primaryVerses, bookName, chapterNumber);
+      return;
+    }
+
+    await ensureBooksLoaded(secondaryLang);
+
+    const secondaryBookObj = booksCacheByLang[secondaryLang].books.find(
+      (b) => b.bookNumber === bookNumber,
     );
 
-    if (!response.ok)
-      throw new Error(t('Bölüm getirilemedi', 'Could not load chapter'));
+    if (!secondaryBookObj?.name) {
+      // fallback: just show primary
+      displayChapterView(primaryVerses, bookName, chapterNumber);
+      return;
+    }
 
-    const verses = await response.json();
-    displayChapterView(verses, bookName, chapterNumber);
+    const secondaryBookName = secondaryBookObj.name;
+
+    const secondaryUrl =
+      `${API_BASE}/${encodeURIComponent(secondaryBookName)}/${chapterNumber}` +
+      `?lang=${encodeURIComponent(secondaryLang)}`;
+
+    const secondaryRes = await fetch(secondaryUrl);
+    if (!secondaryRes.ok) {
+      // still show primary if secondary missing
+      displayChapterView(primaryVerses, bookName, chapterNumber);
+      return;
+    }
+
+    const secondaryVerses = await secondaryRes.json();
+
+    // Merge verses by verseNumber
+    const merged = mergeParallelVerses(
+      primaryVerses,
+      secondaryVerses,
+      primaryLang,
+      secondaryLang,
+    );
+
+    displayParallelChapterView(merged, bookName, chapterNumber);
   } catch (error) {
     showError(
       `${t('Bölüm getirilemedi', 'Could not load chapter')}: ${error.message}`,
     );
   }
+}
+
+function mergeParallelVerses(
+  primaryVerses,
+  secondaryVerses,
+  primaryLang,
+  secondaryLang,
+) {
+  const p = dedupeVersesByNumber(primaryVerses);
+  const s = dedupeVersesByNumber(secondaryVerses);
+
+  const sMap = new Map();
+  for (const v of s) sMap.set(v.verseNumber, v);
+
+  return p.map((pv) => {
+    const sv = sMap.get(pv.verseNumber);
+    return {
+      bookNumber: pv.bookNumber,
+      verseNumber: pv.verseNumber,
+      primaryLang,
+      secondaryLang,
+      primaryText: pv.text || '',
+      secondaryText: sv?.text || '',
+    };
+  });
 }
 
 async function showVerseContext(bookName, chapterNumber, verseNumber) {
@@ -669,6 +783,103 @@ async function showVerseContext(bookName, chapterNumber, verseNumber) {
       `${t('Ayet bağlamı getirilemedi', 'Could not load context')}: ${error.message}`,
     );
   }
+}
+
+function displayParallelChapterView(rows, bookName, chapterNumber) {
+  clearPendingResults();
+
+  const bookNumber = rows?.[0]?.bookNumber;
+
+  resultsDiv.innerHTML = `
+    <div class="chapter-header">
+      <h2>${escapeHtml(bookName)} ${chapterNumber}. ${t('Bölüm', 'Chapter')}</h2>
+      <button class="btn btn-primary" id="backToSearchBtn">← ${t("Arama'ya Dön", 'Back to Search')}</button>
+    </div>
+
+    <div class="chapter-content parallel-chapter">
+      ${rows
+        .map(
+          (r) => `
+        <div class="parallel-verse" id="verse-${r.verseNumber}">
+          <div class="parallel-col">
+            <div class="parallel-meta">
+              <span class="verse-number">${r.verseNumber}</span>
+              <span class="parallel-lang">${escapeHtml((r.primaryLang || currentLang).toUpperCase())}</span>
+            </div>
+            <div class="parallel-text">${escapeHtml(r.primaryText || '')}</div>
+          </div>
+
+          <div class="parallel-col">
+            <div class="parallel-meta">
+              <span class="verse-number">${r.verseNumber}</span>
+              <span class="parallel-lang">${escapeHtml((r.secondaryLang || '').toUpperCase())}</span>
+            </div>
+            <div class="parallel-text">${escapeHtml(r.secondaryText || '')}</div>
+          </div>
+        </div>
+      `,
+        )
+        .join('')}
+    </div>
+
+    <button id="prevChapterBtn" class="chapter-nav-arrow left" aria-label="${t('Önceki bölüm', 'Previous chapter')}">‹</button>
+    <button id="nextChapterBtn" class="chapter-nav-arrow right" aria-label="${t('Sonraki bölüm', 'Next chapter')}">›</button>
+  `;
+
+  document
+    .getElementById('backToSearchBtn')
+    ?.addEventListener('click', loadInitialContent);
+
+  // reuse your existing prev/next computation (booksCache + bookIndexByNumber)
+  if (bookNumber == null || booksCache.length === 0) {
+    hideChapterNavArrows();
+    return;
+  }
+
+  const idx = bookIndexByNumber[bookNumber];
+  if (idx == null) {
+    hideChapterNavArrows();
+    return;
+  }
+
+  // prev
+  let prevBook = booksCache[idx];
+  let prevChapter = chapterNumber - 1;
+  if (prevChapter < 1) {
+    const prevBookObj = booksCache[idx - 1];
+    if (prevBookObj) {
+      prevBook = prevBookObj;
+      prevChapter = prevBookObj.totalChapters;
+    } else {
+      prevBook = null;
+    }
+  }
+
+  // next
+  let nextBook = booksCache[idx];
+  let nextChapter = chapterNumber + 1;
+  if (nextBook && nextChapter > nextBook.totalChapters) {
+    const nextBookObj = booksCache[idx + 1];
+    if (nextBookObj) {
+      nextBook = nextBookObj;
+      nextChapter = 1;
+    } else {
+      nextBook = null;
+    }
+  }
+
+  const prevBtn = document.getElementById('prevChapterBtn');
+  const nextBtn = document.getElementById('nextChapterBtn');
+
+  if (prevBook && prevBtn) {
+    prevBtn.style.display = 'flex';
+    prevBtn.onclick = () => showChapter(prevBook.name, prevChapter);
+  } else if (prevBtn) prevBtn.style.display = 'none';
+
+  if (nextBook && nextBtn) {
+    nextBtn.style.display = 'flex';
+    nextBtn.onclick = () => showChapter(nextBook.name, nextChapter);
+  } else if (nextBtn) nextBtn.style.display = 'none';
 }
 
 function displayChapterView(verses, bookName, chapterNumber) {

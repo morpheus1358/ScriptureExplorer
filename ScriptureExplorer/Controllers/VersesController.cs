@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using ScriptureExplorer.Data;
 using ScriptureExplorer.DTOs;
 using ScriptureExplorer.Models;
+using ScriptureExplorer.Models.DTOs.ScriptureExplorer.DTOs;
 
 namespace ScriptureExplorer.Controllers
 {
@@ -29,6 +30,78 @@ namespace ScriptureExplorer.Controllers
                 "en" => "EN_KJV",
                 _ => lang // if you add more later, map them here
             };
+
+        // GET: api/verses/John/3/parallel?primary=tr&secondary=en
+        // GET: api/verses/John/1/parallel?primary=tr&secondary=en
+        [HttpGet("{bookName}/{chapterNumber:int}/parallel")]
+        public async Task<ActionResult<List<ParallelVerseDto>>> GetChapterParallel(
+            string bookName,
+            int chapterNumber,
+            [FromQuery] string primary = "tr",
+            [FromQuery] string secondary = "en")
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(primary)) primary = "tr";
+                if (string.IsNullOrWhiteSpace(secondary)) secondary = "en";
+
+                if (primary.Equals(secondary, StringComparison.OrdinalIgnoreCase))
+                    return BadRequest("primary and secondary languages must be different.");
+
+                _logger.LogInformation("Getting parallel chapter: {Book} {Chapter} ({Primary}/{Secondary})",
+                    bookName, chapterNumber, primary, secondary);
+
+                var verses = await _context.Verses
+                    .Include(v => v.Chapter)
+                        .ThenInclude(c => c.Book)
+                            .ThenInclude(b => b.Names)
+                    .Include(v => v.Translations)
+                    .Where(v =>
+                        v.Chapter.Book.Names.Any(n => n.Name.ToLower() == bookName.ToLower()) &&
+                        v.Chapter.ChapterNumber == chapterNumber)
+                    .OrderBy(v => v.VerseNumber)
+                    .Select(v => new ParallelVerseDto
+                    {
+                        VerseNumber = v.VerseNumber,
+
+                        PrimaryText = PickTranslationText(v.Translations, primary),
+                        SecondaryText = PickTranslationText(v.Translations, secondary),
+
+                        BookName =
+                            v.Chapter.Book.Names.Where(n => n.Lang == primary).Select(n => n.Name).FirstOrDefault()
+                            ?? v.Chapter.Book.Names.Where(n => n.Lang == "tr").Select(n => n.Name).FirstOrDefault()
+                            ?? v.Chapter.Book.Names.Select(n => n.Name).FirstOrDefault()
+                            ?? bookName,
+
+                        ChapterNumber = v.Chapter.ChapterNumber,
+                        BookNumber = v.BookNumber,
+
+                        PrimaryLang = primary,
+                        SecondaryLang = secondary
+                    })
+                    .ToListAsync();
+
+                if (!verses.Any())
+                    return NotFound($"Chapter not found: {bookName} {chapterNumber}");
+
+                return verses;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting parallel chapter: {Book} {Chapter}", bookName, chapterNumber);
+                return StatusCode(500, "An error occurred while retrieving the parallel chapter");
+            }
+        }
+
+        // reuse your helper (keep it in controller)
+        private static string PickTranslationText(IEnumerable<VerseTranslation> translations, string lang)
+        {
+            return translations.FirstOrDefault(t => t.Lang == lang)?.Text
+                ?? translations.FirstOrDefault(t => t.Lang == "tr")?.Text
+                ?? translations.FirstOrDefault(t => t.Lang == "en")?.Text
+                ?? string.Empty;
+        }
+
 
         // GET: api/verses/Yaratılış/1?lang=tr
         // ✅ Hard filter by Lang + TranslationCode → NO mixed-language leakage.
@@ -86,6 +159,8 @@ namespace ScriptureExplorer.Controllers
                 return StatusCode(500, "An error occurred while retrieving the chapter");
             }
         }
+
+
 
         [HttpGet("{bookName}/{chapterNumber:int}/{verseRange}")]
         public async Task<ActionResult<List<VerseDto>>> GetVerseRange(
