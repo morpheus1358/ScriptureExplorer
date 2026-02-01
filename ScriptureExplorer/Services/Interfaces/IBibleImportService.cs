@@ -5,7 +5,11 @@ namespace ScriptureExplorer.Services.Interfaces
     public interface IBibleImportService
     {
         Task<ImportResult> ImportTurkishBibleAsync(string csvPath);
-        Task<ImportResult> ImportKjvBibleAsync(string filePath);
+        Task<ImportResult> ImportTurkishBibleAsync(Stream csvStream);
+
+        // ✅ match your controller + service (2 args)
+        Task<ImportResult> ImportKjvBibleAsync(string filePath, bool forceReimport = false);
+
 
     }
 

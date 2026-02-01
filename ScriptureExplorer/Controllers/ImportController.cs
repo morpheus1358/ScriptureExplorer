@@ -47,29 +47,19 @@ namespace ScriptureExplorer.Controllers
         }
 
         [HttpPost("kjv")]
-        public async Task<ActionResult<ImportResult>> ImportKjvBible()
+        public async Task<ActionResult<ImportResult>> ImportKjv([FromQuery] bool force = false)
         {
             try
             {
                 var csvPath = Path.Combine(Directory.GetCurrentDirectory(), "Data", "kjv.csv");
-                // ^ make sure the filename matches your actual file
+                var result = await _importService.ImportKjvBibleAsync(csvPath, force);
 
-                var result = await _importService.ImportKjvBibleAsync(csvPath);
-
-                if (result.Success)
-                {
-                    _logger.LogInformation("KJV Bible import completed via API");
-                    return Ok(result);
-                }
-                else
-                {
-                    _logger.LogWarning("KJV Bible import failed via API: {Message}", result.Message);
-                    return BadRequest(result);
-                }
+                if (result.Success) return Ok(result);
+                return BadRequest(result);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error during KJV Bible import via API");
+                _logger.LogError(ex, "Error during KJV import via API");
                 return StatusCode(500, new ImportResult
                 {
                     Success = false,
@@ -77,6 +67,7 @@ namespace ScriptureExplorer.Controllers
                 });
             }
         }
+
 
 
 

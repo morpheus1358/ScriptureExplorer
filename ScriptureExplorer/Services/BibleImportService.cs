@@ -4,6 +4,9 @@ using ScriptureExplorer.Models;
 using ScriptureExplorer.Services.Interfaces;
 using System.Text;
 using System.Text.RegularExpressions;
+using CsvHelper;
+using CsvHelper.Configuration;
+using System.Globalization;
 
 namespace ScriptureExplorer.Services
 {
@@ -127,7 +130,7 @@ namespace ScriptureExplorer.Services
         }
 
 
-        public async Task<ImportResult> ImportKjvBibleAsync(string filePath)
+        public async Task<ImportResult> ImportKjvBibleAsync(string filePath, bool forceReimport = false)
         {
             var result = new ImportResult();
 
@@ -144,42 +147,74 @@ namespace ScriptureExplorer.Services
 
             try
             {
-                using var reader = new StreamReader(filePath, Encoding.UTF8);
+                // If you re-run import, you probably want to delete only KJV translations (not TR data)
+                if (forceReimport)
+                {
+                    await _context.VerseTranslations
+                        .Where(t => t.TranslationCode == "EN_KJV")
+                        .ExecuteDeleteAsync();
+                }
+
+                // 1) Read until the real header line "Verse ID;Book Name;..."
+                using var sr = new StreamReader(filePath, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
 
                 string? line;
-                bool headerPassed = false;
-                int lineNumber = 0;
+                var remainder = new StringBuilder();
+                bool headerFound = false;
 
-                while ((line = await reader.ReadLineAsync()) != null)
+                while ((line = await sr.ReadLineAsync()) != null)
                 {
-                    lineNumber++;
-                    if (string.IsNullOrWhiteSpace(line))
-                        continue;
-
-                    // Skip metadata until we hit the real header line:
-                    // Verse ID;Book Name;Book Number;Chapter;Verse;Text
-                    if (!headerPassed)
+                    if (!headerFound)
                     {
-                        if (line.StartsWith("Verse ID;"))
-                            headerPassed = true;
-
+                        if (line.StartsWith("Verse ID;", StringComparison.OrdinalIgnoreCase))
+                        {
+                            headerFound = true;
+                            remainder.AppendLine(line);
+                        }
                         continue;
                     }
 
-                    var parts = SplitSemicolonCsv(line);
-                    if (parts.Count < 6)
-                        continue;
+                    remainder.AppendLine(line);
+                }
 
+                if (!headerFound)
+                {
+                    result.Success = false;
+                    result.Message = "Could not find header line: 'Verse ID;Book Name;Book Number;Chapter;Verse;Text'";
+                    return result;
+                }
+
+                // 2) Parse the remaining CSV properly (quotes + multiline supported)
+                using var reader = new StringReader(remainder.ToString());
+                var config = new CsvConfiguration(CultureInfo.InvariantCulture)
+                {
+                    Delimiter = ";",
+                    HasHeaderRecord = true,
+                    BadDataFound = null,
+                    MissingFieldFound = null,
+                    HeaderValidated = null,
+                    DetectColumnCountChanges = false,
+                    IgnoreBlankLines = true,
+                    TrimOptions = TrimOptions.Trim
+                };
+
+                using var csv = new CsvReader(reader, config);
+
+                while (await csv.ReadAsync())
+                {
                     // Columns: Verse ID;Book Name;Book Number;Chapter;Verse;Text
-                    string bookName = parts[1].Trim();
-                    if (!int.TryParse(parts[2], out int bookNumber)) continue;
-                    if (!int.TryParse(parts[3], out int chapterNumber)) continue;
-                    if (!int.TryParse(parts[4], out int verseNumber)) continue;
+                    var verseIdStr = csv.GetField(0);
+                    var bookName = (csv.GetField(1) ?? "").Trim();
+                    var bookNumberStr = csv.GetField(2);
+                    var chapterNumberStr = csv.GetField(3);
+                    var verseNumberStr = csv.GetField(4);
+                    var rawText = csv.GetField(5) ?? "";
 
-                    // Columns 0–4 are fixed, everything from 5 onward is the verse text
-                    string rawText = string.Join(";", parts.Skip(5));
-                    string text = CleanKjvText(rawText);
+                    if (!int.TryParse(bookNumberStr, out int bookNumber)) continue;
+                    if (!int.TryParse(chapterNumberStr, out int chapterNumber)) continue;
+                    if (!int.TryParse(verseNumberStr, out int verseNumber)) continue;
 
+                    var text = CleanKjvText(rawText);
 
                     // --- get or create Book ---
                     var book = await _context.Books
@@ -226,9 +261,7 @@ namespace ScriptureExplorer.Services
 
                     // --- get or create Verse ---
                     var verse = await _context.Verses
-                        .FirstOrDefaultAsync(v =>
-                            v.ChapterId == chapter.Id &&
-                            v.VerseNumber == verseNumber);
+                        .FirstOrDefaultAsync(v => v.ChapterId == chapter.Id && v.VerseNumber == verseNumber);
 
                     if (verse == null)
                     {
@@ -244,28 +277,32 @@ namespace ScriptureExplorer.Services
                     }
 
                     // --- add translation (KJV) ---
-                    var hasKjv = await _context.VerseTranslations
-    .AnyAsync(t => t.VerseId == verse.Id &&
-                   t.Lang == "en" &&
-                   t.TranslationCode == "EN_KJV");
+                    var hasKjv = await _context.VerseTranslations.AnyAsync(t =>
+                        t.VerseId == verse.Id &&
+                        t.TranslationCode == "EN_KJV"
+                    );
 
                     if (!hasKjv)
                     {
-                        var translation = new VerseTranslation
+                        _context.VerseTranslations.Add(new VerseTranslation
                         {
                             VerseId = verse.Id,
                             Lang = "en",
                             TranslationCode = "EN_KJV",
                             Source = "BibleSuperSearch",
-                            Text = text,
-                            SourceKey = parts[0]
-                        };
+                            SourceKey = verseIdStr ?? "",
+                            Text = text
+                        });
 
-                        _context.VerseTranslations.Add(translation);
                         versesImported++;
-                        await _context.SaveChangesAsync();
+
+                        // save in batches (much faster)
+                        if (versesImported % 500 == 0)
+                            await _context.SaveChangesAsync();
                     }
                 }
+
+                await _context.SaveChangesAsync();
 
                 result.Success = true;
                 result.VersesImported = versesImported;
@@ -273,17 +310,17 @@ namespace ScriptureExplorer.Services
                 result.ChaptersImported = chaptersImported;
                 result.TranslationsImported = versesImported;
                 result.Message = $"Successfully imported {versesImported} KJV verses.";
-
                 _logger.LogInformation("KJV import completed: {Verses} verses", versesImported);
+
+                return result;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error importing KJV Bible from {File}", filePath);
                 result.Success = false;
                 result.Message = $"Error importing KJV Bible: {ex.Message}";
+                return result;
             }
-
-            return result;
         }
 
         private string CleanKjvText(string text)
