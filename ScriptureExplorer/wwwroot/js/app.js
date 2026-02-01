@@ -845,6 +845,7 @@ function displayParallelChapterView(rows, bookName, chapterNumber) {
     currentLang ||
     'tr'
   ).toUpperCase();
+
   const secondaryLang = (
     verses?.[0]?.secondaryLang ||
     parallelSecondaryLang ||
@@ -858,37 +859,34 @@ function displayParallelChapterView(rows, bookName, chapterNumber) {
     </div>
 
     <div class="parallel-grid">
-
-  <!-- Sticky Column Headers -->
-  <div class="parallel-row is-head">
-    <div class="parallel-head">${escapeHtml(primaryLang)}</div>
-    <div class="parallel-head">${escapeHtml(secondaryLang)}</div>
-  </div>
-
-  ${verses
-    .map(
-      (v) => `
-    <div class="parallel-row" data-verse="${escapeHtml(String(v.verseNumber))}">
-      <div class="parallel-cell left">
-        <div class="parallel-cell-head">
-          <span class="verse-number">${escapeHtml(String(v.verseNumber))}</span>
-        </div>
-        <div class="parallel-text">${escapeHtml(v.primaryText || '')}</div>
+      <!-- Sticky Column Headers -->
+      <div class="parallel-row is-head">
+        <div class="parallel-head">${escapeHtml(primaryLang)}</div>
+        <div class="parallel-head">${escapeHtml(secondaryLang)}</div>
       </div>
 
-      <div class="parallel-cell right">
-        <div class="parallel-cell-head">
-          <span class="verse-number">${escapeHtml(String(v.verseNumber))}</span>
-        </div>
-        <div class="parallel-text">${escapeHtml(v.secondaryText || '')}</div>
-      </div>
+      ${verses
+        .map(
+          (v) => `
+          <div class="parallel-row" data-verse="${escapeHtml(String(v.verseNumber))}">
+            <div class="parallel-cell left">
+              <div class="parallel-verse-line">
+                <span class="verse-number">${escapeHtml(String(v.verseNumber))}</span>
+                <div class="parallel-text">${escapeHtml(v.primaryText || '')}</div>
+              </div>
+            </div>
+
+            <div class="parallel-cell right">
+              <div class="parallel-verse-line">
+                <span class="verse-number">${escapeHtml(String(v.verseNumber))}</span>
+                <div class="parallel-text">${escapeHtml(v.secondaryText || '')}</div>
+              </div>
+            </div>
+          </div>
+        `,
+        )
+        .join('')}
     </div>
-  `,
-    )
-    .join('')}
-
-</div>
-
 
     <button id="prevChapterArrow" class="chapter-nav-arrow left" aria-label="${t('Önceki bölüm', 'Previous chapter')}">‹</button>
     <button id="nextChapterArrow" class="chapter-nav-arrow right" aria-label="${t('Sonraki bölüm', 'Next chapter')}">›</button>
