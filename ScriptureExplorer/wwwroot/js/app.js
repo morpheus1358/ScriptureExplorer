@@ -829,20 +829,7 @@ async function showVerseContext(bookName, chapterNumber, verseNumber) {
 function displayParallelChapterView(rows, bookName, chapterNumber) {
   clearPendingResults();
 
-  const bookNumber = rows?.[0]?.bookNumber;
-
-  const primaryLang = (
-    rows?.[0]?.primaryLang ||
-    currentLang ||
-    'tr'
-  ).toUpperCase();
-  const secondaryLang = (
-    rows?.[0]?.secondaryLang ||
-    parallelSecondaryLang ||
-    ''
-  ).toUpperCase();
-
-  // stable order + unique verseNumber
+  // De-dupe + stable sort by verseNumber
   const map = new Map();
   for (const r of rows || []) {
     if (r && !map.has(r.verseNumber)) map.set(r.verseNumber, r);
@@ -851,52 +838,58 @@ function displayParallelChapterView(rows, bookName, chapterNumber) {
     (a, b) => a.verseNumber - b.verseNumber,
   );
 
+  const bookNumber = verses?.[0]?.bookNumber;
+
+  const primaryLang = (
+    verses?.[0]?.primaryLang ||
+    currentLang ||
+    'tr'
+  ).toUpperCase();
+  const secondaryLang = (
+    verses?.[0]?.secondaryLang ||
+    parallelSecondaryLang ||
+    'en'
+  ).toUpperCase();
+
   resultsDiv.innerHTML = `
     <div class="chapter-header">
       <h2>${escapeHtml(bookName)} ${escapeHtml(String(chapterNumber))}. ${t('Bölüm', 'Chapter')}</h2>
       <button class="btn btn-primary" id="backToSearchBtn">← ${t("Arama'ya Dön", 'Back to Search')}</button>
     </div>
 
-    <!-- Two-column parallel layout -->
-    <div class="parallel-two-col">
-      <div class="parallel-col-block">
-        <div class="parallel-col-title">${escapeHtml(primaryLang)}</div>
-        <div class="parallel-col-list">
-          ${verses
-            .map(
-              (v) => `
-              <div class="parallel-verse-box" id="p-verse-${v.verseNumber}">
-                <div class="parallel-verse-head">
-                  <span class="verse-number">${escapeHtml(String(v.verseNumber))}</span>
-                </div>
-                <div class="parallel-verse-text">${escapeHtml(v.primaryText || '')}</div>
-              </div>
-            `,
-            )
-            .join('')}
+    <div class="parallel-grid">
+
+  <!-- Sticky Column Headers -->
+  <div class="parallel-row is-head">
+    <div class="parallel-head">${escapeHtml(primaryLang)}</div>
+    <div class="parallel-head">${escapeHtml(secondaryLang)}</div>
+  </div>
+
+  ${verses
+    .map(
+      (v) => `
+    <div class="parallel-row" data-verse="${escapeHtml(String(v.verseNumber))}">
+      <div class="parallel-cell left">
+        <div class="parallel-cell-head">
+          <span class="verse-number">${escapeHtml(String(v.verseNumber))}</span>
         </div>
+        <div class="parallel-text">${escapeHtml(v.primaryText || '')}</div>
       </div>
 
-      <div class="parallel-col-block">
-        <div class="parallel-col-title">${escapeHtml(secondaryLang)}</div>
-        <div class="parallel-col-list">
-          ${verses
-            .map(
-              (v) => `
-              <div class="parallel-verse-box" id="s-verse-${v.verseNumber}">
-                <div class="parallel-verse-head">
-                  <span class="verse-number">${escapeHtml(String(v.verseNumber))}</span>
-                </div>
-                <div class="parallel-verse-text">${escapeHtml(v.secondaryText || '')}</div>
-              </div>
-            `,
-            )
-            .join('')}
+      <div class="parallel-cell right">
+        <div class="parallel-cell-head">
+          <span class="verse-number">${escapeHtml(String(v.verseNumber))}</span>
         </div>
+        <div class="parallel-text">${escapeHtml(v.secondaryText || '')}</div>
       </div>
     </div>
+  `,
+    )
+    .join('')}
 
-    <!-- Side arrows -->
+</div>
+
+
     <button id="prevChapterArrow" class="chapter-nav-arrow left" aria-label="${t('Önceki bölüm', 'Previous chapter')}">‹</button>
     <button id="nextChapterArrow" class="chapter-nav-arrow right" aria-label="${t('Sonraki bölüm', 'Next chapter')}">›</button>
   `;

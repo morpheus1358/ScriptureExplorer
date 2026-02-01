@@ -478,55 +478,76 @@ input[type="text"]:focus {
   }
 }
 
+/* ===== Parallel (ROW-BASED, aligned by verse) ===== */
+
+/* Make the parallel view feel like TWO columns (not two cards) */
 .parallel-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px 18px; /* row gap, column gap */
-  align-items: start;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0;                /* remove padded card feel */
+  background: transparent;   /* let columns define look */
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Header row (sticky TR / EN) */
+.parallel-row.is-head {
+  position: sticky;
+  top: 0;
+  z-index: 5;
 }
 
 .parallel-head {
-  font-weight: 700;
-  letter-spacing: .5px;
   padding: 12px 14px;
-  border-radius: 10px;
-  background: rgba(52, 152, 219, 0.12);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.95);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+  font-weight: 800;
+  letter-spacing: .6px;
+  text-transform: uppercase;
   color: #2c3e50;
 }
 
+/* Rows still aligned by verse */
+.parallel-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  align-items: stretch;
+}
+
+/* Add a subtle vertical divider between columns */
+.parallel-row::before {
+  content: "";
+  grid-column: 1 / -1;
+  justify-self: center;
+  width: 1px;
+  background: rgba(255,255,255,0.55);
+  border-radius: 999px;
+  /* height matches row content */
+}
+
+/* Cells look like they belong to columns */
 .parallel-cell {
   background: rgba(255, 255, 255, 0.95);
   border-radius: 12px;
-  padding: 14px 14px;
-  box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+  padding: 14px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.08);
 }
 
-.parallel-verse-number {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 28px;
-  height: 24px;
-  padding: 0 8px;
-  margin-right: 10px;
-  border-radius: 6px;
-  background: #3498db;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-}
+/* optional: stronger separation */
+.parallel-cell.left { border-left: 6px solid rgba(52,152,219,0.35); }
+.parallel-cell.right { border-left: 6px solid rgba(230,126,34,0.35); }
 
+/* Mobile: stack TR then EN */
 @media (max-width: 900px) {
-  .parallel-grid {
+  .parallel-row {
     grid-template-columns: 1fr;
   }
-  .parallel-head {
-    position: sticky;
-    top: 0;
-    z-index: 2;
-  }
+  .parallel-row::before { display:none; }
 }
-
 
 /* Chapter View Styles */
 .chapter-header, .context-header {
