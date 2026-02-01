@@ -469,23 +469,80 @@ input[type="text"]:focus {
   border-radius: 999px;
 }
 
-.parallel-cell .verse-number {
-  margin-top: 2px;
-}
-
-/* Number + text on the same line with a consistent gap */
+/* Perfect alignment: fixed badge column + text column */
 .parallel-verse-line {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px; /* ✅ THIS is the spacing you wanted */
+  display: grid;
+  grid-template-columns: 34px 1fr; /* badge width + text */
+  column-gap: 14px;
+  align-items: start;
 }
 
-/* Keep badge stable and not shrink */
-.parallel-verse-line .verse-number {
-  flex: 0 0 auto;
-  min-width: 30px;
-  margin-right: 0; /* gap handles spacing */
+/* Locked highlight (on click) */
+.parallel-row.is-active .parallel-cell {
+  background: rgba(52, 152, 219, 0.10) !important;
 }
+/* Verse badge interaction */
+.verse-number {
+  cursor: pointer;
+  user-select: none;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.verse-number:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(0,0,0,0.12);
+}
+
+/* Tiny toast */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  background: rgba(20, 24, 33, 0.92);
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 14px;
+  z-index: 10000;
+  box-shadow: 0 12px 28px rgba(0,0,0,0.22);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(-4px);
+}
+
+
+.parallel-head {
+  text-align: center;
+}
+
+/* Slight optical nudge so both sides feel equal */
+.parallel-row.is-head .parallel-head:first-child {
+  padding-right: 18px;
+}
+
+.parallel-row.is-head .parallel-head:last-child {
+  padding-left: 18px;
+}
+
+
+/* Badge: stable size and centered */
+.parallel-verse-line .verse-number {
+  width: 34px;
+  min-width: 34px;
+  height: 28px;
+  margin: 0;           /* IMPORTANT: overrides global margin-right */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform: none;
+}
+
 
 /* Calm text */
 .parallel-text {
@@ -508,9 +565,15 @@ input[type="text"]:focus {
   border-bottom: none;
 }
 
-/* Subtle hover helps verse tracking without clutter */
+/* Hover-sync highlight for the whole verse row */
 .parallel-row:hover .parallel-cell {
-  background: rgba(52, 152, 219, 0.03);
+  background: rgba(52, 152, 219, 0.06) !important;
+}
+
+/* Optional: make the verse badge pop a bit on hover */
+.parallel-row:hover .verse-number {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(0,0,0,0.10);
 }
 
 /* Header row */

@@ -8,6 +8,16 @@
        fetch primary chapter (currentLang) + fetch secondary chapter (secondaryLang),
        map by bookNumber using /books?lang=...
        render 2 columns (TR left, EN right)
+
+   ✅ Copy features (as you requested):
+   - Parallel view:
+       * Click verse badge copies ONLY the clicked side (TR badge -> TR text, EN badge -> EN text)
+       * EN copy uses English book name (Genesis), TR uses Turkish (Yaratılış)
+       * Long-press copies ONLY the clicked side (same as above, just easier on mobile)
+       * Shift+Click copies TR+EN together (optional)
+       * Toast: “Genesis 2:14 copied” / “Yaratılış 2:14 copied”
+   - Chapter view (single language) + Context view:
+       * Click verse number copies ref + verse text with toast
 */
 
 const API_BASE = '/api/verses';
@@ -845,7 +855,6 @@ function displayParallelChapterView(rows, bookName, chapterNumber) {
     currentLang ||
     'tr'
   ).toUpperCase();
-
   const secondaryLang = (
     verses?.[0]?.secondaryLang ||
     parallelSecondaryLang ||
@@ -902,6 +911,112 @@ function displayParallelChapterView(rows, bookName, chapterNumber) {
     'prevChapterArrow',
     'nextChapterArrow',
   );
+
+  // ✅ IMPORTANT: pass bookNumber so EN can become “Genesis”, TR becomes “Yaratılış”
+  wireParallelCopyActions(bookNumber, chapterNumber);
+}
+
+/**
+ * PARALLEL COPY RULES:
+ * - Click badge copies ONLY clicked side: `${Ref}\n\nTR: ...` or `${Ref}\n\nEN: ...`
+ * - Ref uses localized book name per side (EN => Genesis, TR => Yaratılış)
+ * - Long-press copies ONLY clicked side (same payload)
+ * - Shift+Click copies TR+EN together (optional)
+ */
+function wireParallelCopyActions(bookNumber, chapterNumber) {
+  const rows = document.querySelectorAll('.parallel-row[data-verse]');
+  rows.forEach((row) => {
+    const verseNum = row.dataset.verse;
+
+    const trText =
+      row
+        .querySelector('.parallel-cell.left .parallel-text')
+        ?.innerText?.trim() || '';
+    const enText =
+      row
+        .querySelector('.parallel-cell.right .parallel-text')
+        ?.innerText?.trim() || '';
+
+    row.querySelectorAll('.verse-number').forEach((badge) => {
+      const cell = badge.closest('.parallel-cell');
+      const isLeft = !!cell?.classList.contains('left');
+      const lang = isLeft ? 'tr' : 'en';
+      const sideLabel = isLeft ? 'TR' : 'EN';
+      const verseText = (isLeft ? trText : enText) || '';
+
+      const bookLocalized = getBookNameByNumber(lang, bookNumber, '');
+      const ref = makeRef(bookLocalized || '', chapterNumber, verseNum);
+
+      // --- Long press detection (touch + mouse) ---
+      let pressTimer = null;
+      let longPressed = false;
+
+      const startPress = () => {
+        longPressed = false;
+        clearTimeout(pressTimer);
+        pressTimer = setTimeout(async () => {
+          longPressed = true;
+
+          const textToCopy = `${ref}\n\n${sideLabel}: ${verseText}`.trim();
+          const ok = await copyToClipboard(textToCopy);
+          if (ok) showToast(`${ref} copied`);
+        }, 520);
+      };
+
+      const cancelPress = () => {
+        clearTimeout(pressTimer);
+        pressTimer = null;
+      };
+
+      badge.addEventListener(
+        'touchstart',
+        (e) => {
+          e.stopPropagation();
+          startPress();
+        },
+        { passive: true },
+      );
+      badge.addEventListener('touchend', cancelPress);
+      badge.addEventListener('touchcancel', cancelPress);
+
+      badge.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+        startPress();
+      });
+      badge.addEventListener('mouseup', cancelPress);
+      badge.addEventListener('mouseleave', cancelPress);
+
+      // --- CLICK action ---
+      badge.addEventListener('click', async (e) => {
+        e.stopPropagation();
+
+        // If this click was the end of a long-press, don't double-trigger
+        if (longPressed) return;
+
+        // OPTIONAL: SHIFT + click copies TR+EN together
+        if (e.shiftKey) {
+          const trBook = getBookNameByNumber('tr', bookNumber, '');
+          const enBook = getBookNameByNumber('en', bookNumber, '');
+          const refTR = makeRef(trBook || '', chapterNumber, verseNum);
+          const refEN = makeRef(enBook || '', chapterNumber, verseNum);
+
+          const both =
+            `${refTR}\nTR: ${trText}\n\n${refEN}\nEN: ${enText}`.trim();
+          const ok = await copyToClipboard(both);
+          if (ok)
+            showToast(
+              `${enBook || trBook} ${chapterNumber}:${verseNum} copied`,
+            );
+          return;
+        }
+
+        // Normal click: copy ONLY clicked side (ref + verse)
+        const textToCopy = `${ref}\n\n${sideLabel}: ${verseText}`.trim();
+        const ok = await copyToClipboard(textToCopy);
+        if (ok) showToast(`${ref} copied`);
+      });
+    });
+  });
 }
 
 function displayChapterView(verses, bookName, chapterNumber) {
@@ -920,7 +1035,9 @@ function displayChapterView(verses, bookName, chapterNumber) {
       ${uniqueVerses
         .map(
           (v) => `
-          <div class="verse-in-chapter" id="verse-${escapeHtml(String(v.verseNumber))}">
+          <div class="verse-in-chapter" data-verse="${escapeHtml(String(v.verseNumber))}" id="verse-${escapeHtml(
+            String(v.verseNumber),
+          )}">
             <span class="verse-number">${escapeHtml(String(v.verseNumber))}</span>
             <span class="verse-text">${escapeHtml(v.text || '')}</span>
           </div>
@@ -944,6 +1061,33 @@ function displayChapterView(verses, bookName, chapterNumber) {
     'prevChapterArrow',
     'nextChapterArrow',
   );
+
+  // ✅ Copy on click (chapter view)
+  wireChapterCopyActions(bookNumber, bookName, chapterNumber);
+}
+
+function wireChapterCopyActions(bookNumber, fallbackBookName, chapterNumber) {
+  document.querySelectorAll('.verse-in-chapter').forEach((row) => {
+    const numEl = row.querySelector('.verse-number');
+    const textEl = row.querySelector('.verse-text');
+    if (!numEl || !textEl) return;
+
+    numEl.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const verseNum = row.dataset.verse || numEl.innerText.trim();
+      const verseText = textEl.innerText.trim();
+
+      // in single language view, use currentLang localized book name if possible
+      const bookLocalized =
+        bookNumber != null
+          ? getBookNameByNumber(currentLang, bookNumber, fallbackBookName)
+          : fallbackBookName;
+      const ref = makeRef(bookLocalized, chapterNumber, verseNum);
+
+      const ok = await copyToClipboard(`${ref}\n\n${verseText}`.trim());
+      if (ok) showToast(`${ref} copied`);
+    });
+  });
 }
 
 function wirePrevNextArrows(bookNumber, chapterNumber, prevId, nextId) {
@@ -1010,6 +1154,7 @@ function displayContextView(verses, bookName, chapterNumber, targetVerse) {
   clearPendingResults();
 
   const unique = dedupeVersesByNumber(verses);
+  const bookNumber = unique?.[0]?.bookNumber;
 
   resultsDiv.innerHTML = `
     <div class="context-header">
@@ -1026,6 +1171,7 @@ function displayContextView(verses, bookName, chapterNumber, targetVerse) {
         .map(
           (v) => `
           <div class="verse-in-context ${v.verseNumber === targetVerse ? 'highlighted-verse' : ''}"
+               data-verse="${escapeHtml(String(v.verseNumber))}"
                id="verse-${escapeHtml(String(v.verseNumber))}">
             <span class="verse-number">${escapeHtml(String(v.verseNumber))}</span>
             <span class="verse-text">${escapeHtml(v.text || '')}</span>
@@ -1045,11 +1191,37 @@ function displayContextView(verses, bookName, chapterNumber, targetVerse) {
       showChapter(bookName, chapterNumber);
     });
 
+  // ✅ Copy on click (context view)
+  wireContextCopyActions(bookNumber, bookName, chapterNumber);
+
   setTimeout(() => {
     document
       .getElementById(`verse-${targetVerse}`)
       ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, 100);
+}
+
+function wireContextCopyActions(bookNumber, fallbackBookName, chapterNumber) {
+  document.querySelectorAll('.verse-in-context').forEach((row) => {
+    const numEl = row.querySelector('.verse-number');
+    const textEl = row.querySelector('.verse-text');
+    if (!numEl || !textEl) return;
+
+    numEl.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const verseNum = row.dataset.verse || numEl.innerText.trim();
+      const verseText = textEl.innerText.trim();
+
+      const bookLocalized =
+        bookNumber != null
+          ? getBookNameByNumber(currentLang, bookNumber, fallbackBookName)
+          : fallbackBookName;
+      const ref = makeRef(bookLocalized, chapterNumber, verseNum);
+
+      const ok = await copyToClipboard(`${ref}\n\n${verseText}`.trim());
+      if (ok) showToast(`${ref} copied`);
+    });
+  });
 }
 
 // -------------------- UI states --------------------
@@ -1118,6 +1290,65 @@ function escapeHtml(unsafe) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+// Tiny toast (“Genesis 2:14 copied”)
+function showToast(message) {
+  let el = document.getElementById('toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toast';
+    el.className = 'toast';
+    document.body.appendChild(el);
+  }
+
+  el.textContent = message;
+
+  // restart animation
+  el.classList.remove('show');
+  // force reflow
+  void el.offsetWidth;
+  el.classList.add('show');
+
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), 1100);
+}
+
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (e) {
+    // fallback for older browsers
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+function getBookNameByNumber(lang, bookNumber, fallbackName = '') {
+  const cache = booksCacheByLang?.[lang]?.books || [];
+  const found = cache.find((b) => b.bookNumber === bookNumber);
+  return found?.name || fallbackName || '';
+}
+
+function makeRef(bookName, chapterNumber, verseNumber) {
+  // bookName can be empty if something is wrong; avoid leading space
+  const bn = (bookName || '').trim();
+  return bn
+    ? `${bn} ${chapterNumber}:${verseNumber}`
+    : `${chapterNumber}:${verseNumber}`;
 }
 
 // -------------------- Expose globals used by HTML --------------------
