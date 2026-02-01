@@ -21,112 +21,184 @@ namespace ScriptureExplorer.Services
             _logger = logger;
         }
 
-        public async Task<ImportResult> ImportTurkishBibleAsync(string csvPath)
+        public async Task<ImportResult> ImportTurkishBibleAsync(string csvPath, bool forceReimport = false)
         {
             _logger.LogInformation("Starting Turkish Bible import from {CsvPath}", csvPath);
 
             if (!File.Exists(csvPath))
-            {
-                return new ImportResult
-                {
-                    Success = false,
-                    Message = $"CSV file not found: {csvPath}"
-                };
-            }
+                return new ImportResult { Success = false, Message = $"CSV file not found: {csvPath}" };
 
             using var stream = File.OpenRead(csvPath);
-            return await ImportTurkishBibleAsync(stream);
+            return await ImportTurkishBibleAsync(stream, forceReimport);
         }
 
-        public async Task<ImportResult> ImportTurkishBibleAsync(Stream csvStream)
+
+        public async Task<ImportResult> ImportTurkishBibleAsync(Stream csvStream, bool forceReimport = false)
         {
             var result = new ImportResult();
-            var importVerses = new List<ImportVerse>();
 
             try
             {
-                // Read and parse CSV
-                using var reader = new StreamReader(csvStream, Encoding.UTF8);
-                var lines = new List<string>();
-                while (!reader.EndOfStream)
+                if (forceReimport)
                 {
-                    lines.Add(await reader.ReadLineAsync());
-                }
-
-                var verseLines = lines.Skip(7).Where(line => !string.IsNullOrWhiteSpace(line));
-
-                foreach (var line in verseLines)
-                {
-                    if (TryParseLine(line, out var importVerse))
-                    {
-                        importVerses.Add(importVerse);
-                    }
-                    else
-                    {
-                        result.Errors.Add($"Failed to parse line: {line}");
-                    }
-                }
-
-                _logger.LogInformation("Parsed {VerseCount} verses from CSV", importVerses.Count);
-
-                // Import into database
-                await ClearExistingDataAsync();
-                var importStats = await ImportToDatabaseAsync(importVerses);
-
-                result.Success = true;
-                result.BooksImported = importStats.BookCount;
-                result.ChaptersImported = importStats.ChapterCount;
-                result.VersesImported = importStats.VerseCount;
-                result.TranslationsImported = importStats.TranslationCount;
-                result.Message = $"Successfully imported {importStats.VerseCount} Turkish Bible verses";
-
-                _logger.LogInformation("Turkish Bible import completed: {Message}", result.Message);
-            }
-            catch (Exception ex)
-            {
-                result.Success = false;
-                result.Message = $"Import failed: {ex.Message}";
-                _logger.LogError(ex, "Turkish Bible import failed");
-            }
-
-            return result;
-        }
-
-        // Split a ;-separated line, respecting double quotes
-        private List<string> SplitSemicolonCsv(string line)
-        {
-            var result = new List<string>();
-            if (string.IsNullOrEmpty(line))
-                return result;
-
-            var sb = new StringBuilder();
-            bool inQuotes = false;
-
-            for (int i = 0; i < line.Length; i++)
-            {
-                char c = line[i];
-
-                if (c == '"')
-                {
-                    // toggle quote mode
-                    inQuotes = !inQuotes;
-                    sb.Append(c);
-                }
-                else if (c == ';' && !inQuotes)
-                {
-                    // field separator
-                    result.Add(sb.ToString());
-                    sb.Clear();
+                    // Only delete Turkish TR_TBS translations (do NOT delete Books/Chapters/Verses)
+                    await _context.VerseTranslations
+                        .Where(t => t.TranslationCode == "TR_TBS")
+                        .ExecuteDeleteAsync();
                 }
                 else
                 {
-                    sb.Append(c);
+                    // If not forcing, block reimport if TR_TBS already exists
+                    var exists = await _context.VerseTranslations.AnyAsync(t => t.TranslationCode == "TR_TBS");
+                    if (exists)
+                    {
+                        return new ImportResult
+                        {
+                            Success = false,
+                            Message = "TR_TBS already imported. Use ?force=true to reimport."
+                        };
+                    }
                 }
-            }
 
-            // last field
-            result.Add(sb.ToString());
-            return result;
+                // Read file fully (we'll skip first 7 lines like your original code)
+                using var sr = new StreamReader(csvStream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+
+                var allLines = new List<string>();
+                while (!sr.EndOfStream)
+                    allLines.Add(await sr.ReadLineAsync() ?? "");
+
+                var dataLines = allLines.Skip(7).Where(l => !string.IsNullOrWhiteSpace(l)).ToList();
+
+                // Feed into CsvHelper
+                using var reader = new StringReader(string.Join(Environment.NewLine, dataLines));
+
+                var config = new CsvConfiguration(CultureInfo.InvariantCulture)
+                {
+                    Delimiter = ";",
+                    HasHeaderRecord = false,
+                    Quote = '"',
+                    Escape = '"',
+                    BadDataFound = null,
+                    MissingFieldFound = null,
+                    HeaderValidated = null,
+                    DetectColumnCountChanges = false,
+                    IgnoreBlankLines = true
+                };
+
+                using var csv = new CsvReader(reader, config);
+
+                // Cache books/chapters/verses to avoid SaveChanges inside loops
+                // We'll build the structure if missing, but NOT delete anything.
+                var books = await _context.Books.Include(b => b.Names).ToListAsync();
+                var chapters = await _context.Chapters.ToListAsync();
+                var verses = await _context.Verses.ToListAsync();
+
+                int versesImported = 0;
+                int booksImported = 0;
+                int chaptersImported = 0;
+
+                while (await csv.ReadAsync())
+                {
+                    // Turkish CSV columns:
+                    // 0 VerseId; 1 BookName; 2 BookNumber; 3 Chapter; 4 Verse; 5 Text
+                    var verseIdStr = csv.GetField(0);
+                    var bookName = (csv.GetField(1) ?? "").Trim();
+                    var bookNumberStr = csv.GetField(2);
+                    var chapterStr = csv.GetField(3);
+                    var verseStr = csv.GetField(4);
+                    var rawText = csv.GetField(5) ?? "";
+
+                    if (!int.TryParse(bookNumberStr, out int bookNumber)) continue;
+                    if (!int.TryParse(chapterStr, out int chapterNumber)) continue;
+                    if (!int.TryParse(verseStr, out int verseNumber)) continue;
+
+                    var text = CleanText(rawText);
+
+                    // --- get or create Book ---
+                    var book = books.FirstOrDefault(b => b.BookNumber == bookNumber);
+                    if (book == null)
+                    {
+                        book = new Book
+                        {
+                            BookNumber = bookNumber,
+                            Testament = bookNumber <= 39 ? Testament.Old : Testament.New,
+                            Names = new List<BookName>()
+                        };
+                        _context.Books.Add(book);
+                        await _context.SaveChangesAsync();
+
+                        books.Add(book);
+                        booksImported++;
+                    }
+
+                    if (!book.Names.Any(n => n.Lang == "tr"))
+                    {
+                        var bn = new BookName { BookId = book.Id, Lang = "tr", Name = bookName };
+                        _context.BookNames.Add(bn);
+                        book.Names.Add(bn);
+                        await _context.SaveChangesAsync();
+                    }
+
+                    // --- get or create Chapter ---
+                    var chapter = chapters.FirstOrDefault(c => c.BookId == book.Id && c.ChapterNumber == chapterNumber);
+                    if (chapter == null)
+                    {
+                        chapter = new Chapter { BookId = book.Id, ChapterNumber = chapterNumber };
+                        _context.Chapters.Add(chapter);
+                        await _context.SaveChangesAsync();
+
+                        chapters.Add(chapter);
+                        chaptersImported++;
+                    }
+
+                    // --- get or create Verse ---
+                    var verse = verses.FirstOrDefault(v => v.ChapterId == chapter.Id && v.VerseNumber == verseNumber);
+                    if (verse == null)
+                    {
+                        verse = new Verse
+                        {
+                            BookNumber = bookNumber,
+                            ChapterNumber = chapterNumber,
+                            VerseNumber = verseNumber,
+                            ChapterId = chapter.Id
+                        };
+                        _context.Verses.Add(verse);
+                        await _context.SaveChangesAsync();
+
+                        verses.Add(verse);
+                    }
+
+                    // --- add translation (TR_TBS) ---
+                    _context.VerseTranslations.Add(new VerseTranslation
+                    {
+                        VerseId = verse.Id,
+                        Lang = "tr",
+                        TranslationCode = "TR_TBS",
+                        Text = text,
+                        Source = "BibleSuperSearch",
+                        SourceKey = verseIdStr ?? ""
+                    });
+
+                    versesImported++;
+                    if (versesImported % 1000 == 0)
+                        await _context.SaveChangesAsync();
+                }
+
+                await _context.SaveChangesAsync();
+
+                result.Success = true;
+                result.VersesImported = versesImported;
+                result.BooksImported = booksImported;
+                result.ChaptersImported = chaptersImported;
+                result.TranslationsImported = versesImported;
+                result.Message = $"Successfully imported {versesImported} TR_TBS verses.";
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Turkish Bible import failed");
+                return new ImportResult { Success = false, Message = $"Import failed: {ex.Message}" };
+            }
         }
 
 
@@ -328,44 +400,31 @@ namespace ScriptureExplorer.Services
             if (string.IsNullOrWhiteSpace(text))
                 return string.Empty;
 
+            // Common BOM / replacement junk
             text = text.Replace("\ufeff", "");   // BOM
-            text = text.Replace("�", "");        // weird replacement char
-            text = text.Replace("¶", "");        // paragraph marker
+            text = text.Replace("ï»¿", "");      // BOM-as-text
+            text = text.Replace("¶", "");
 
-            // strip outer double-quotes if the field was quoted
-            text = text.Trim()
-                       .Trim('"')
-                       .Replace("\"\"", "\"");
+            // If a file contains true Unicode replacement chars, remove them too.
+            text = text.Replace("�", "");
 
-            // remove [editorial] words like [was]
-            text = Regex.Replace(text, @"\[(.*?)\]", "").Trim();
+            // Unquote & unescape
+            text = text.Trim().Trim('"').Replace("\"\"", "\"");
+
+            // ✅ Strip any leading Unicode control/format chars that can eat the first visible word
+            // \p{C} = control + formatting + surrogate + private-use + unassigned
+            text = Regex.Replace(text, @"^\p{C}+", "");
+
+            // Also strip leftover weird leading punctuation/spaces
+            text = Regex.Replace(text, @"^[\s\p{P}]+", "");
+
+            // Normalize whitespace
+            text = Regex.Replace(text, @"\s+", " ").Trim();
 
             return text;
         }
 
 
-
-        private bool TryParseLine(string line, out ImportVerse importVerse)
-        {
-            importVerse = null;
-            var columns = line.Split(';');
-
-            if (columns.Length >= 6 && int.TryParse(columns[0], out var verseId))
-            {
-                importVerse = new ImportVerse
-                {
-                    VerseId = verseId,
-                    BookName = columns[1].Trim(),
-                    BookNumber = int.Parse(columns[2]),
-                    Chapter = int.Parse(columns[3]),
-                    Verse = int.Parse(columns[4]),
-                    Text = CleanText(columns[5])
-                };
-                return true;
-            }
-
-            return false;
-        }
 
         private string CleanText(string text)
         {
@@ -376,20 +435,6 @@ namespace ScriptureExplorer.Services
                        .Replace("“", "\"")
                        .Replace("”", "\"");
         }
-
-        private async Task ClearExistingDataAsync()
-        {
-            _logger.LogInformation("Clearing existing Bible data...");
-
-            await _context.VerseTranslations.ExecuteDeleteAsync();
-            await _context.Verses.ExecuteDeleteAsync();
-            await _context.Chapters.ExecuteDeleteAsync();
-            await _context.BookNames.ExecuteDeleteAsync();
-            await _context.Books.ExecuteDeleteAsync();
-
-            _logger.LogInformation("Existing Bible data cleared");
-        }
-
         private async Task<ImportStats> ImportToDatabaseAsync(List<ImportVerse> importVerses)
         {
             var stats = new ImportStats();

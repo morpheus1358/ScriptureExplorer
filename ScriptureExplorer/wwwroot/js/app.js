@@ -1,6 +1,9 @@
 const API_BASE = '/api/verses';
 const APP_NAME = 'ScriptureExplorer - Türkçe Kutsal Kitap';
 let currentLang = 'tr';
+let booksCache = []; // array of books for current language
+let bookIndexByNumber = {}; // bookNumber -> index in booksCache
+
 // Book lists for parsing references
 const BOOKS_TR = [
   'Yaratılış',
@@ -158,6 +161,16 @@ function loadAuthFromStorage() {
     authToken = null;
     currentUserName = null;
   }
+}
+
+async function loadBooks() {
+  const res = await fetch(
+    `${API_BASE}/books?lang=${encodeURIComponent(currentLang)}`,
+  );
+  if (!res.ok) throw new Error('Books yüklenemedi');
+  booksCache = await res.json();
+  bookIndexByNumber = {};
+  booksCache.forEach((b, idx) => (bookIndexByNumber[b.bookNumber] = idx));
 }
 
 function saveAuth(token, userName) {
@@ -325,10 +338,12 @@ function initializeApp() {
   const langSelect = document.getElementById('languageSelect');
   if (langSelect) {
     langSelect.value = currentLang;
-    langSelect.addEventListener('change', () => {
+    langSelect.addEventListener('change', async () => {
       currentLang = langSelect.value;
+      await loadBooks();
     });
   }
+  loadBooks().catch(console.error);
 
   // Load initial content
   loadInitialContent();
@@ -347,7 +362,7 @@ function setupEventListeners() {
     'input',
     debounce(function (e) {
       // Could add real-time suggestions here
-    }, 300)
+    }, 300),
   );
 }
 
@@ -385,7 +400,7 @@ async function search(query) {
       await showVerseRange(
         verseRef.bookName,
         verseRef.chapter,
-        verseRef.verseRange
+        verseRef.verseRange,
       );
       return;
     }
@@ -400,8 +415,8 @@ async function search(query) {
     // 3️⃣ Else: normal text search
     const response = await fetch(
       `${API_BASE}/search?q=${encodeURIComponent(
-        query
-      )}&lang=${encodeURIComponent(currentLang)}`
+        query,
+      )}&lang=${encodeURIComponent(currentLang)}`,
     );
 
     if (!response.ok) {
@@ -460,7 +475,7 @@ function tryParseChapterReference(input) {
 
   const matchedBook =
     availableBooks.find(
-      (book) => normalizeBookName(book) === normalizedInput
+      (book) => normalizeBookName(book) === normalizedInput,
     ) ||
     availableBooks.find((book) => {
       const nb = normalizeBookName(book);
@@ -491,7 +506,7 @@ function tryParseVerseReference(input) {
 
     let matchedBook =
       availableBooks.find(
-        (book) => normalizeBookName(book) === normalizedInput
+        (book) => normalizeBookName(book) === normalizedInput,
       ) ||
       availableBooks.find((book) => {
         const nb = normalizeBookName(book);
@@ -517,16 +532,12 @@ async function showVerseRange(bookName, chapterNumber, verseRange) {
 
   try {
     const response = await fetch(
-      `${API_BASE}/${bookName}/${chapterNumber}/${verseRange}?lang=${encodeURIComponent(
-        currentLang
-      )}`
+      `${API_BASE}/${encodeURIComponent(bookName)}/${chapterNumber}/${encodeURIComponent(verseRange)}?lang=${encodeURIComponent(currentLang)}`,
     );
 
     if (!response.ok) throw new Error('Ayet aralığı getirilemedi');
 
     const verses = await response.json();
-
-    // It's a single verse - show with context
     displayResults(verses, `${bookName} ${chapterNumber}:${verseRange}`);
   } catch (error) {
     showError(`Ayet aralığı getirilemedi: ${error.message}`);
@@ -539,7 +550,7 @@ async function getRandomVerse() {
 
   try {
     const response = await fetch(
-      `${API_BASE}/random?lang=${encodeURIComponent(currentLang)}`
+      `${API_BASE}/random?lang=${encodeURIComponent(currentLang)}`,
     );
 
     if (!response.ok) {
@@ -580,25 +591,21 @@ function createVerseElement(verse) {
   const verseElement = document.createElement('div');
   verseElement.className = 'verse';
   verseElement.innerHTML = `
-        <div class="verse-reference">
-            ${verse.bookName} ${verse.chapterNumber}:${verse.verseNumber}
-        </div>
-        <div class="verse-text">${escapeHtml(verse.text)}</div>
-        <div class="verse-actions">
-            <button class="btn-small btn-success" 
-                    onclick="showChapter('${escapeHtml(verse.bookName)}', ${
-    verse.chapterNumber
-  })">
-                📚 Tüm Bölümü Oku
-            </button>
-            <button class="btn-small btn-warning" 
-                    onclick="showVerseContext('${escapeHtml(
-                      verse.bookName
-                    )}', ${verse.chapterNumber}, ${verse.verseNumber})">
-                🔍 Bağlamında Gör
-            </button>
-        </div>
-    `;
+    <div class="verse-reference">
+      ${escapeHtml(verse.bookName)} ${verse.chapterNumber}:${verse.verseNumber}
+    </div>
+    <div class="verse-text">${escapeHtml(verse.text)}</div>
+    <div class="verse-actions">
+      <button class="btn-small btn-success"
+              onclick="showChapter(${jsString(verse.bookName)}, ${verse.chapterNumber})">
+        📚 Tüm Bölümü Oku
+      </button>
+      <button class="btn-small btn-warning"
+              onclick="showVerseContext(${jsString(verse.bookName)}, ${verse.chapterNumber}, ${verse.verseNumber})">
+        🔍 Bağlamında Gör
+      </button>
+    </div>
+  `;
   return verseElement;
 }
 
@@ -608,9 +615,7 @@ async function showChapter(bookName, chapterNumber) {
 
   try {
     const response = await fetch(
-      `${API_BASE}/${bookName}/${chapterNumber}?lang=${encodeURIComponent(
-        currentLang
-      )}`
+      `${API_BASE}/${encodeURIComponent(bookName)}/${chapterNumber}?lang=${encodeURIComponent(currentLang)}`,
     );
 
     if (!response.ok) throw new Error('Bölüm getirilemedi');
@@ -627,11 +632,8 @@ async function showVerseContext(bookName, chapterNumber, verseNumber) {
   showLoading('Ayet bağlamı yükleniyor...');
 
   try {
-    // Get the entire chapter
     const response = await fetch(
-      `${API_BASE}/${bookName}/${chapterNumber}?lang=${encodeURIComponent(
-        currentLang
-      )}`
+      `${API_BASE}/${encodeURIComponent(bookName)}/${chapterNumber}?lang=${encodeURIComponent(currentLang)}`,
     );
 
     if (!response.ok) throw new Error('Ayet bağlamı getirilemedi');
@@ -641,7 +643,7 @@ async function showVerseContext(bookName, chapterNumber, verseNumber) {
       allVerses,
       bookName,
       chapterNumber,
-      parseInt(verseNumber)
+      parseInt(verseNumber, 10),
     );
   } catch (error) {
     showError(`Ayet bağlamı getirilemedi: ${error.message}`);
@@ -651,24 +653,86 @@ async function showVerseContext(bookName, chapterNumber, verseNumber) {
 // Display entire chapter as reading view
 function displayChapterView(verses, bookName, chapterNumber) {
   clearPendingResults();
+
+  // We can read bookNumber from the first verse
+  const bookNumber = verses?.[0]?.bookNumber;
+
+  let prevBtn = '';
+  let nextBtn = '';
+
+  if (bookNumber != null && booksCache.length > 0) {
+    const idx = bookIndexByNumber[bookNumber];
+
+    // Prev chapter logic
+    let prevBook = booksCache[idx];
+    let prevChapter = chapterNumber - 1;
+
+    if (prevChapter < 1) {
+      // go to previous book last chapter
+      const prevBookObj = booksCache[idx - 1];
+      if (prevBookObj) {
+        prevBook = prevBookObj;
+        prevChapter = prevBookObj.totalChapters;
+      } else {
+        prevBook = null;
+      }
+    }
+
+    if (prevBook) {
+      prevBtn = `
+    <button class="btn btn-secondary"
+      onclick="showChapter(${JSON.stringify(prevBook.name)}, ${prevChapter})">
+      ← Önceki Bölüm
+    </button>`;
+    }
+
+    // Next chapter logic
+    let nextBook = booksCache[idx];
+    let nextChapter = chapterNumber + 1;
+
+    if (nextBook && nextChapter > nextBook.totalChapters) {
+      // go to next book chapter 1
+      const nextBookObj = booksCache[idx + 1];
+      if (nextBookObj) {
+        nextBook = nextBookObj;
+        nextChapter = 1;
+      } else {
+        nextBook = null;
+      }
+    }
+
+    if (nextBook) {
+      nextBtn = `
+    <button class="btn btn-secondary"
+      onclick="showChapter(${JSON.stringify(nextBook.name)}, ${nextChapter})">
+      Sonraki Bölüm →
+    </button>`;
+    }
+  }
+
   resultsDiv.innerHTML = `
-        <div class="chapter-header">
-            <h2>${bookName} ${chapterNumber}. Bölüm</h2>
-            <button class="btn btn-primary" onclick="loadInitialContent()">← Arama'ya Dön</button>
-        </div>
-        <div class="chapter-content">
-            ${verses
-              .map(
-                (verse) => `
-                <div class="verse-in-chapter" id="verse-${verse.verseNumber}">
-                    <span class="verse-number">${verse.verseNumber}</span>
-                    <span class="verse-text">${escapeHtml(verse.text)}</span>
-                </div>
-            `
-              )
-              .join('')}
-        </div>
-    `;
+    <div class="chapter-header">
+      <h2>${bookName} ${chapterNumber}. Bölüm</h2>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
+        <button class="btn btn-primary" onclick="loadInitialContent()">← Arama'ya Dön</button>
+        ${prevBtn}
+        ${nextBtn}
+      </div>
+    </div>
+
+    <div class="chapter-content">
+      ${verses
+        .map(
+          (verse) => `
+          <div class="verse-in-chapter" id="verse-${verse.verseNumber}">
+            <span class="verse-number">${verse.verseNumber}</span>
+            <span class="verse-text">${escapeHtml(verse.text)}</span>
+          </div>
+        `,
+        )
+        .join('')}
+    </div>
+  `;
 }
 
 // Display verse with highlighted context
@@ -679,7 +743,7 @@ function displayContextView(verses, bookName, chapterNumber, targetVerse) {
             <h2>${bookName} ${chapterNumber}:${targetVerse} - Bağlam</h2>
             <button class="btn btn-primary" onclick="loadInitialContent()">← Arama'ya Dön</button>
             <button class="btn btn-secondary" onclick="showChapter('${escapeHtml(
-              bookName
+              bookName,
             )}', ${chapterNumber})">
                 Tüm Bölümü Oku
             </button>
@@ -695,7 +759,7 @@ function displayContextView(verses, bookName, chapterNumber, targetVerse) {
                     <span class="verse-number">${verse.verseNumber}</span>
                     <span class="verse-text">${escapeHtml(verse.text)}</span>
                 </div>
-            `
+            `,
               )
               .join('')}
         </div>
@@ -750,6 +814,10 @@ function loadInitialContent() {
   setTimeout(() => {
     search('tanrı');
   }, 1000);
+}
+
+function jsString(value) {
+  return JSON.stringify(value ?? '');
 }
 
 // Utility function to escape HTML

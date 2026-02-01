@@ -17,12 +17,13 @@ namespace ScriptureExplorer.Controllers
         }
 
         [HttpPost("turkish-bible")]
-        public async Task<ActionResult<ImportResult>> ImportTurkishBible()
+        public async Task<ActionResult<ImportResult>> ImportTurkishBible([FromQuery] bool force = false)
+
         {
             try
             {
                 var csvPath = Path.Combine(Directory.GetCurrentDirectory(), "Data", "turkish_bible.csv");
-                var result = await _importService.ImportTurkishBibleAsync(csvPath);
+                var result = await _importService.ImportTurkishBibleAsync(csvPath, force);
 
                 if (result.Success)
                 {
