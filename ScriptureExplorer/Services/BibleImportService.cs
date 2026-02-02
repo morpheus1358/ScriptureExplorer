@@ -929,25 +929,43 @@ namespace ScriptureExplorer.Services
     string lang,
     string translationCode,
     string source,
-    bool force)
+    bool forceReimport)
         {
+            lang = (lang ?? "").Trim().ToLowerInvariant();
+            translationCode = (translationCode ?? "").Trim();
+
             var result = new ImportResult();
 
             if (!File.Exists(filePath))
-                return new ImportResult { Success = false, Message = "File not found." };
+                return new ImportResult { Success = false, Message = $"File not found: {filePath}" };
 
-            if (force)
+            // Optional: only delete THIS translation for Quran verses
+            if (forceReimport)
             {
                 await _context.VerseTranslations
-                    .Where(v => v.TranslationCode == translationCode)
+                    .Where(vt =>
+                        vt.Lang == lang &&
+                        vt.TranslationCode == translationCode &&
+                        vt.Verse.Work == Work.Quran)
                     .ExecuteDeleteAsync();
             }
 
-            using var reader = new StreamReader(filePath, Encoding.UTF8);
+            int booksCreated = 0;
+            int chaptersCreated = 0;
+            int versesCreated = 0;
+            int translationsCreated = 0;
 
+            // Small caches to avoid hitting DB per line
+            var bookBySurah = new Dictionary<int, Book>();
+            var chapterByBookId = new Dictionary<int, Chapter>(); // Quran chapter always 1
+
+            using var reader = new StreamReader(filePath, Encoding.UTF8);
             string? line;
+
             while ((line = await reader.ReadLineAsync()) != null)
             {
+                if (string.IsNullOrWhiteSpace(line)) continue;
+
                 var parts = line.Split('|', 3);
                 if (parts.Length != 3) continue;
 
@@ -958,50 +976,62 @@ namespace ScriptureExplorer.Services
                 if (text.Length == 0) continue;
 
                 // BOOK (Surah)
-                var book = await _context.Books
-                    .FirstOrDefaultAsync(b =>
-                        b.Work == Work.Quran &&
-                        b.BookNumber == surah);
-
-                if (book == null)
+                if (!bookBySurah.TryGetValue(surah, out var book))
                 {
-                    book = new Book
+                    book = await _context.Books
+                        .FirstOrDefaultAsync(b => b.Work == Work.Quran && b.BookNumber == surah);
+
+                    if (book == null)
                     {
-                        Work = Work.Quran,
-                        BookNumber = surah,
-                        Testament = Testament.Old
-                    };
-                    _context.Books.Add(book);
-                    await _context.SaveChangesAsync();
+                        book = new Book
+                        {
+                            Work = Work.Quran,
+                            BookNumber = surah,
+                            // Quran isn't OT/NT but your schema needs something
+                            Testament = Testament.Old
+                        };
+                        _context.Books.Add(book);
+                        await _context.SaveChangesAsync();
+                        booksCreated++;
+                    }
+
+                    bookBySurah[surah] = book;
                 }
 
                 // CHAPTER (always 1)
-                var chapter = await _context.Chapters
-                    .FirstOrDefaultAsync(c =>
-                        c.BookId == book.Id &&
-                        c.ChapterNumber == 1);
-
-                if (chapter == null)
+                if (!chapterByBookId.TryGetValue(book.Id, out var chapter))
                 {
-                    chapter = new Chapter
+                    chapter = await _context.Chapters
+                        .FirstOrDefaultAsync(c => c.BookId == book.Id && c.ChapterNumber == 1);
+
+                    if (chapter == null)
                     {
-                        BookId = book.Id,
-                        ChapterNumber = 1
-                    };
-                    _context.Chapters.Add(chapter);
-                    await _context.SaveChangesAsync();
+                        chapter = new Chapter
+                        {
+                            BookId = book.Id,
+                            ChapterNumber = 1
+                        };
+                        _context.Chapters.Add(chapter);
+                        await _context.SaveChangesAsync();
+                        chaptersCreated++;
+                    }
+
+                    chapterByBookId[book.Id] = chapter;
                 }
 
-                // VERSE
+                // VERSE (match your UNIQUE index: Work + BookNumber + ChapterNumber + VerseNumber)
                 var verse = await _context.Verses
                     .FirstOrDefaultAsync(v =>
-                        v.ChapterId == chapter.Id &&
+                        v.Work == Work.Quran &&
+                        v.BookNumber == surah &&
+                        v.ChapterNumber == 1 &&
                         v.VerseNumber == ayah);
 
                 if (verse == null)
                 {
                     verse = new Verse
                     {
+                        Work = Work.Quran,        // ✅ critical
                         BookNumber = surah,
                         ChapterNumber = 1,
                         VerseNumber = ayah,
@@ -1009,12 +1039,15 @@ namespace ScriptureExplorer.Services
                     };
                     _context.Verses.Add(verse);
                     await _context.SaveChangesAsync();
+                    versesCreated++;
                 }
 
-                // TRANSLATION
-                if (!await _context.VerseTranslations.AnyAsync(v =>
-                    v.VerseId == verse.Id &&
-                    v.TranslationCode == translationCode))
+                // TRANSLATION (unique per VerseId + TranslationCode in your DB)
+                var exists = await _context.VerseTranslations.AnyAsync(vt =>
+                    vt.VerseId == verse.Id &&
+                    vt.TranslationCode == translationCode);
+
+                if (!exists)
                 {
                     _context.VerseTranslations.Add(new VerseTranslation
                     {
@@ -1024,15 +1057,22 @@ namespace ScriptureExplorer.Services
                         Text = text,
                         Source = source
                     });
+                    translationsCreated++;
                 }
             }
 
             await _context.SaveChangesAsync();
 
             result.Success = true;
-            result.Message = "Quran import completed.";
+            result.BooksImported = booksCreated;
+            result.ChaptersImported = chaptersCreated;
+            result.VersesImported = versesCreated;
+            result.TranslationsImported = translationsCreated;
+            result.Message = $"Quran import completed. Books+{booksCreated}, Chapters+{chaptersCreated}, Verses+{versesCreated}, Translations+{translationsCreated}.";
+
             return result;
         }
+
 
         private static string CleanGenericText(string text)
         {

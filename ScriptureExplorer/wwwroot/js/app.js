@@ -1,31 +1,35 @@
-/* app.js — ScriptureExplorer (FULL)
-   ✅ Includes:
-   - translationCode support on all API calls
-   - by-number fetching whenever possible
-   - translation dropdowns (primary + secondary)
-   - per-language translationCode registry with localStorage persistence
-   - book-name matching via /books?lang=... (works for Arabic names)
-   - dedupe verses in UI
-   - parallel view without /parallel backend
-   - copy verse by clicking verse number badges (copies ONLY clicked side)
-   ✅ Adds:
-   - Arabic (ar) support + AR_SVD
-   - RTL-safe rendering (per-column dir in parallel)
-   - View state persistence (changing language resumes same chapter/range/context)
-   - URL deep-linking (search/chapter/range/context + lang/version/parallel)
-   - Auto keyword translation for Arabic (tanrı→الله, isa→يسوع, etc.)
+/* app.js — ScriptureExplorer (FULL, Work-aware)
+   ✅ Includes everything you already had +
+   ✅ Adds FULL Bible/Quran switching via `work=bible|quran` on every API call
+   ✅ Deep-linking preserves work
+   ✅ Books cache is safe when switching work
+   ✅ TranslationCode defaults per work (Bible vs Quran)
+   ✅ Parallel still works (by-number merging) for both works
 */
 
 const API_BASE = '/api/verses';
-const APP_NAME = 'ScriptureExplorer - Türkçe Kutsal Kitap';
+const APP_NAME = 'ScriptureExplorer';
 
 // -------------------- App State --------------------
 let currentLang = 'tr';
+
+// ✅ NEW: Work state
+let currentWork = 'bible'; // 'bible' | 'quran'
+
 let parallelMode = false;
 let parallelSecondaryLang = 'en';
 
-// translation codes (per language)
-const TRANSLATIONS = [
+// -------------------- Work helpers --------------------
+function normalizeWork(w) {
+  w = String(w || 'bible')
+    .trim()
+    .toLowerCase();
+  return w === 'quran' ? 'quran' : 'bible';
+}
+
+// -------------------- Translation registries --------------------
+// Bible translation options (what you already had)
+const TRANSLATIONS_BIBLE = [
   { lang: 'tr', code: 'TR_TBS', label: 'Türkçe (TBS)' },
   { lang: 'en', code: 'EN_KJV', label: 'English (KJV)' },
 
@@ -38,35 +42,47 @@ const TRANSLATIONS = [
   { lang: 'ar', code: 'AR_SVD', label: 'العربية (Smith Van Dyke)' },
 ];
 
-const DEFAULT_TRANSLATION_CODE_BY_LANG = {
-  tr: 'TR_TBS',
-  en: 'EN_KJV',
-  fr: 'FR_LS1910',
-  es: 'ES_RV1909',
-  de: 'DE_ELB1905',
-  ru: 'RU_SYNODAL',
-  nl: 'NL_SV',
-  ar: 'AR_SVD',
+// Quran translation options (match your controller defaults; change codes if your DB differs)
+// Quran translation options (match your DB)
+const TRANSLATIONS_QURAN = [
+  { lang: 'tr', code: 'TR_QURAN_VAKFI', label: 'Türkçe (Vakıf)' },
+  { lang: 'en', code: 'EN_QURAN_AHMEDALI', label: 'English (Ahmed Ali)' },
+  { lang: 'ar', code: 'AR_QURAN_JALALAYN', label: 'العربية (الجلالين)' },
+];
+
+// Default code per work+lang
+const DEFAULT_TRANSLATION_CODE_BY_LANG_WORK = {
+  bible: {
+    tr: 'TR_TBS',
+    en: 'EN_KJV',
+    fr: 'FR_LS1910',
+    es: 'ES_RV1909',
+    de: 'DE_ELB1905',
+    ru: 'RU_SYNODAL',
+    nl: 'NL_SV',
+    ar: 'AR_SVD',
+  },
+  quran: {
+    tr: 'TR_QURAN_VAKFI',
+    en: 'EN_QURAN_AHMEDALI',
+    ar: 'AR_QURAN_JALALAYN',
+  },
 };
 
-let translationCodeByLang = { ...DEFAULT_TRANSLATION_CODE_BY_LANG };
-let currentTranslationCode = DEFAULT_TRANSLATION_CODE_BY_LANG[currentLang];
-let secondaryTranslationCode =
-  DEFAULT_TRANSLATION_CODE_BY_LANG[parallelSecondaryLang];
+// Persisted user preferences (translation code per (work,lang))
+let translationCodeByWorkLang = {}; // { bible: { tr: 'TR_TBS', ... }, quran: { tr: 'TR_QURAN_DIYANET', ... } }
+
+let currentTranslationCode = '';
+let secondaryTranslationCode = '';
 
 // -------------------- Books cache --------------------
-let booksCache = []; // currentLang book objects for prev/next
-let bookIndexByNumber = {}; // bookNumber -> index within currentLang list
+// We cache books per (work, lang) so Bible/Quran never mix.
+let booksCache = []; // current work+lang book list for prev/next
+let bookIndexByNumber = {}; // bookNumber -> index in booksCache
 
-let booksCacheByLang = {
-  tr: { books: [], indexByNumber: {}, indexByNameKey: {} },
-  en: { books: [], indexByNumber: {}, indexByNameKey: {} },
-  fr: { books: [], indexByNumber: {}, indexByNameKey: {} },
-  es: { books: [], indexByNumber: {}, indexByNameKey: {} },
-  de: { books: [], indexByNumber: {}, indexByNameKey: {} },
-  ru: { books: [], indexByNumber: {}, indexByNameKey: {} },
-  nl: { books: [], indexByNumber: {}, indexByNameKey: {} },
-  ar: { books: [], indexByNumber: {}, indexByNameKey: {} },
+let booksCacheByWorkLang = {
+  bible: {},
+  quran: {},
 };
 
 // -------------------- DOM refs --------------------
@@ -74,27 +90,24 @@ let searchInput, resultsDiv, langSelectEl, parallelToggleEl, secondarySelectEl;
 let translationSelectEl,
   secondaryTranslationSelectEl,
   secondaryTranslationLabelEl;
+let workSelectEl; // ✅ NEW (optional if you add in HTML)
 
 // -------------------- Auth (optional) --------------------
 let authToken = null;
 let currentUserName = null;
 
 // -------------------- View State + URL routing --------------------
-/**
- * viewState is the SINGLE source of truth for what the user is currently viewing.
- * It makes language switching "resume" the same chapter/range/context reliably.
- */
 let viewState = {
   view: 'search', // 'search' | 'chapter' | 'range' | 'context'
   query: 'tanrı',
 
-  // canonical addressing:
+  // canonical addressing
   bookNumber: null,
   chapterNumber: null,
   verseRange: null,
   verseNumber: null,
 
-  // nice-to-have display name (localized)
+  // display name
   bookName: null,
 };
 
@@ -118,65 +131,78 @@ function dirAttr(lang) {
   return isRTL(lang) ? 'rtl' : 'ltr';
 }
 
-/**
- * For mixed RTL/LTR titles (like "خروج 21"), always wrap in <bdi>
- */
 function bdiWrap(htmlText) {
   return `<bdi>${htmlText}</bdi>`;
 }
 
 function setResultsDirSingleLang() {
   if (!resultsDiv) return;
-  // For single-language views, set results dir to currentLang dir
   resultsDiv.setAttribute('dir', dirAttr(currentLang));
 }
 
 function setResultsDirNeutral() {
   if (!resultsDiv) return;
-  // For parallel views, keep container neutral (layout stable) and set dir per column
   resultsDiv.setAttribute('dir', 'ltr');
 }
 
 // -------------------- Translation prefs --------------------
-function defaultTranslationForLang(lang) {
+function getDefaultTranslationFor(work, lang) {
+  const w = normalizeWork(work);
   const l = (lang || '').trim().toLowerCase();
-  return DEFAULT_TRANSLATION_CODE_BY_LANG[l] || l;
+  return DEFAULT_TRANSLATION_CODE_BY_LANG_WORK[w]?.[l] || l;
 }
 
 function loadTranslationPrefs() {
   try {
-    const raw = localStorage.getItem('translationCodeByLang');
-    if (!raw) return;
+    const raw = localStorage.getItem('translationCodeByWorkLang');
+    if (!raw) {
+      translationCodeByWorkLang = { bible: {}, quran: {} };
+      return;
+    }
     const obj = JSON.parse(raw);
     if (obj && typeof obj === 'object') {
-      translationCodeByLang = { ...translationCodeByLang, ...obj };
+      translationCodeByWorkLang = {
+        bible: { ...(obj.bible || {}) },
+        quran: { ...(obj.quran || {}) },
+      };
+      return;
     }
   } catch {
     // ignore
   }
+  translationCodeByWorkLang = { bible: {}, quran: {} };
 }
 
 function saveTranslationPrefs() {
   try {
     localStorage.setItem(
-      'translationCodeByLang',
-      JSON.stringify(translationCodeByLang),
+      'translationCodeByWorkLang',
+      JSON.stringify(translationCodeByWorkLang),
     );
   } catch {
     // ignore
   }
 }
 
-function getTranslationCode(lang) {
+function getTranslationCode(lang, work = currentWork) {
+  const w = normalizeWork(work);
   const l = (lang || '').trim().toLowerCase();
-  return translationCodeByLang[l] || defaultTranslationForLang(l);
+  const byWork = translationCodeByWorkLang?.[w] || {};
+  return byWork[l] || getDefaultTranslationFor(w, l);
 }
 
-function setTranslationCode(lang, code) {
+function setTranslationCode(lang, code, work = currentWork) {
+  const w = normalizeWork(work);
   const l = (lang || '').trim().toLowerCase();
-  translationCodeByLang[l] =
-    (code || '').trim() || defaultTranslationForLang(l);
+  if (!translationCodeByWorkLang[w]) translationCodeByWorkLang[w] = {};
+  translationCodeByWorkLang[w][l] =
+    (code || '').trim() || getDefaultTranslationFor(w, l);
   saveTranslationPrefs();
+}
+
+function getTranslationsListFor(work) {
+  const w = normalizeWork(work);
+  return w === 'quran' ? TRANSLATIONS_QURAN : TRANSLATIONS_BIBLE;
 }
 
 // -------------------- Book-name normalization --------------------
@@ -192,9 +218,27 @@ function normalizeNameKey(s) {
     .trim();
 }
 
-async function loadBooksForLang(lang) {
-  const res = await fetch(`${API_BASE}/books?lang=${encodeURIComponent(lang)}`);
-  if (!res.ok) throw new Error(`Books yüklenemedi (${lang})`);
+function getBooksCache(work, lang) {
+  const w = normalizeWork(work);
+  const l = (lang || '').trim().toLowerCase();
+  if (!booksCacheByWorkLang[w][l]) {
+    booksCacheByWorkLang[w][l] = {
+      books: [],
+      indexByNumber: {},
+      indexByNameKey: {},
+    };
+  }
+  return booksCacheByWorkLang[w][l];
+}
+
+async function loadBooksForLang(lang, work = currentWork) {
+  const w = normalizeWork(work);
+  const l = (lang || '').trim().toLowerCase();
+
+  const res = await fetch(
+    `${API_BASE}/books?lang=${encodeURIComponent(l)}&work=${encodeURIComponent(w)}`,
+  );
+  if (!res.ok) throw new Error(`Books yüklenemedi (${l}/${w})`);
 
   const books = await res.json();
   const indexByNumber = {};
@@ -206,45 +250,44 @@ async function loadBooksForLang(lang) {
     if (key) indexByNameKey[key] = b.bookNumber;
   });
 
-  if (!booksCacheByLang[lang]) {
-    booksCacheByLang[lang] = {
-      books: [],
-      indexByNumber: {},
-      indexByNameKey: {},
-    };
-  }
-
-  booksCacheByLang[lang] = { books, indexByNumber, indexByNameKey };
+  booksCacheByWorkLang[w][l] = { books, indexByNumber, indexByNameKey };
 }
 
-async function ensureBooksLoaded(lang) {
-  if (!booksCacheByLang[lang]?.books?.length) {
-    await loadBooksForLang(lang);
+async function ensureBooksLoaded(lang, work = currentWork) {
+  const cache = getBooksCache(work, lang);
+  if (!cache.books.length) {
+    await loadBooksForLang(lang, work);
   }
 }
 
 async function loadBooks() {
-  await loadBooksForLang(currentLang);
-  booksCache = booksCacheByLang[currentLang].books;
-  bookIndexByNumber = booksCacheByLang[currentLang].indexByNumber;
+  await loadBooksForLang(currentLang, currentWork);
+  const cache = getBooksCache(currentWork, currentLang);
+  booksCache = cache.books;
+  bookIndexByNumber = cache.indexByNumber;
 }
 
-function tryResolveBookNumber(lang, bookName) {
-  const cache = booksCacheByLang?.[lang];
+function tryResolveBookNumber(lang, bookName, work = currentWork) {
+  const cache = getBooksCache(work, lang);
   if (!cache?.books?.length) return null;
   const key = normalizeNameKey(bookName);
   return cache.indexByNameKey?.[key] ?? null;
 }
 
-function getBookNameByNumber(lang, bookNumber, fallbackName = '') {
-  const cache = booksCacheByLang?.[lang]?.books || [];
-  const found = cache.find((b) => b.bookNumber === bookNumber);
+function getBookNameByNumber(
+  lang,
+  bookNumber,
+  fallbackName = '',
+  work = currentWork,
+) {
+  const cache = getBooksCache(work, lang);
+  const found = (cache.books || []).find((b) => b.bookNumber === bookNumber);
   return found?.name || fallbackName || '';
 }
 
-function getAvailableBookNamesForLang(lang) {
-  const list = booksCacheByLang?.[lang]?.books || [];
-  return list.map((b) => b.name);
+function getAvailableBookNamesForLang(lang, work = currentWork) {
+  const cache = getBooksCache(work, lang);
+  return (cache.books || []).map((b) => b.name);
 }
 
 // -------------------- URL helpers --------------------
@@ -252,30 +295,28 @@ function buildQs(lang, translationCode) {
   const qs = new URLSearchParams();
   qs.set('lang', lang);
   qs.set('translationCode', translationCode);
+  qs.set('work', currentWork); // ✅ NEW
   return qs.toString();
 }
 
-/**
- * Deep-linking:
- * - search:  ?view=search&q=...
- * - chapter: ?view=chapter&bn=...&c=...
- * - range:   ?view=range&bn=...&c=...&vr=...
- * - context: ?view=context&bn=...&c=...&v=...
- * Plus:
- * - lang, tc
- * - parallel, sl, stc
- */
 function writeUrlFromState() {
   const p = new URLSearchParams();
 
+  // ✅ NEW
+  p.set('work', currentWork);
+
   p.set('lang', currentLang);
-  p.set('tc', currentTranslationCode || getTranslationCode(currentLang));
+  p.set(
+    'tc',
+    currentTranslationCode || getTranslationCode(currentLang, currentWork),
+  );
 
   p.set('parallel', parallelMode ? '1' : '0');
   p.set('sl', parallelSecondaryLang);
   p.set(
     'stc',
-    secondaryTranslationCode || getTranslationCode(parallelSecondaryLang),
+    secondaryTranslationCode ||
+      getTranslationCode(parallelSecondaryLang, currentWork),
   );
 
   p.set('view', viewState.view);
@@ -298,21 +339,28 @@ function writeUrlFromState() {
 function readUrlIntoState() {
   const p = new URLSearchParams(location.search);
 
+  // ✅ NEW: work
+  const work = (p.get('work') || 'bible').trim().toLowerCase();
+  currentWork = normalizeWork(work);
+
   // language + codes
   const lang = (p.get('lang') || '').trim().toLowerCase();
   const tc = (p.get('tc') || '').trim();
   if (lang) currentLang = lang;
-  if (tc) setTranslationCode(currentLang, tc);
+  if (tc) setTranslationCode(currentLang, tc, currentWork);
 
   // parallel
   parallelMode = (p.get('parallel') || '0') === '1';
   const sl = (p.get('sl') || '').trim().toLowerCase();
   const stc = (p.get('stc') || '').trim();
   if (sl) parallelSecondaryLang = sl;
-  if (stc) setTranslationCode(parallelSecondaryLang, stc);
+  if (stc) setTranslationCode(parallelSecondaryLang, stc, currentWork);
 
-  currentTranslationCode = getTranslationCode(currentLang);
-  secondaryTranslationCode = getTranslationCode(parallelSecondaryLang);
+  currentTranslationCode = getTranslationCode(currentLang, currentWork);
+  secondaryTranslationCode = getTranslationCode(
+    parallelSecondaryLang,
+    currentWork,
+  );
 
   // view
   const view = (p.get('view') || 'search').trim();
@@ -364,7 +412,7 @@ function readUrlIntoState() {
   // default search
   viewState = {
     view: 'search',
-    query: q || 'tanrı',
+    query: q || (currentWork === 'quran' ? 'allah' : 'tanrı'),
     bookNumber: null,
     chapterNumber: null,
     verseRange: null,
@@ -373,9 +421,10 @@ function readUrlIntoState() {
   };
 }
 
-// -------------------- Auto keyword translation --------------------
+// -------------------- Auto keyword translation (optional) --------------------
 const AUTO_KEYWORD_MAP_TR_TO_AR = {
   tanrı: 'الله',
+  allah: 'الله',
   isa: 'يسوع',
   sevgi: 'محبة',
   iman: 'إيمان',
@@ -389,12 +438,9 @@ function normalizeForKeywordMap(s) {
 
 function translateQueryForCurrentLang(query) {
   const q = normalizeForKeywordMap(query);
-
-  // if Arabic selected and user typed Turkish quick words
   if (currentLang === 'ar' && AUTO_KEYWORD_MAP_TR_TO_AR[q]) {
     return AUTO_KEYWORD_MAP_TR_TO_AR[q];
   }
-
   return query;
 }
 
@@ -409,12 +455,12 @@ function tryParseChapterReference(input) {
   if (lastSpace === -1) return { isChapter: false, bookName: '', chapter: 0 };
 
   const bookPart = trimmed.substring(0, lastSpace).trim();
-  const chapterPart = trimmed.substring(lastSpace + 1).trim();
+  const numPart = trimmed.substring(lastSpace + 1).trim();
 
-  const chapterNum = parseInt(chapterPart, 10);
-  if (isNaN(chapterNum)) return { isChapter: false, bookName: '', chapter: 0 };
+  const n = parseInt(numPart, 10);
+  if (isNaN(n)) return { isChapter: false, bookName: '', chapter: 0 };
 
-  const availableBooks = getAvailableBookNamesForLang(currentLang);
+  const availableBooks = getAvailableBookNamesForLang(currentLang, currentWork);
   const normalizedInput = normalizeNameKey(bookPart);
 
   const matchedBook =
@@ -425,15 +471,20 @@ function tryParseChapterReference(input) {
     });
 
   if (!matchedBook) return { isChapter: false, bookName: '', chapter: 0 };
-  return { isChapter: true, bookName: matchedBook, chapter: chapterNum };
+
+  // ✅ Quran DB: Surah is the book, chapter is always 1.
+  // Users may type "Bakara 2" meaning "Surah Bakara", so load chapter 1.
+  if (isQuran()) {
+    return { isChapter: true, bookName: matchedBook, chapter: 1 };
+  }
+
+  return { isChapter: true, bookName: matchedBook, chapter: n };
 }
 
 function tryParseVerseReference(input) {
   const trimmed = (input || '').trim();
+  const availableBooks = getAvailableBookNamesForLang(currentLang, currentWork);
 
-  const availableBooks = getAvailableBookNamesForLang(currentLang);
-
-  // BookName Chapter:VerseRange
   const pattern = /^([\p{L}\p{M}\s\d\.']+)\s+(\d+):([\d\-,]+)$/u;
   const match = trimmed.match(pattern);
   if (!match)
@@ -452,10 +503,24 @@ function tryParseVerseReference(input) {
   if (!matchedBook)
     return { isVerse: false, bookName: '', chapter: 0, verseRange: '' };
 
+  const typedChapter = parseInt(match[2], 10);
+
+  // ✅ Quran: user writes "Bakara 2:255" (Surah 2, Ayah 255)
+  // but DB is book=Bakara, chapter=1, verse=255.
+  // So we ignore typedChapter and force chapter=1.
+  if (isQuran()) {
+    return {
+      isVerse: true,
+      bookName: matchedBook,
+      chapter: 1,
+      verseRange: match[3],
+    };
+  }
+
   return {
     isVerse: true,
     bookName: matchedBook,
-    chapter: parseInt(match[2], 10),
+    chapter: typedChapter,
     verseRange: match[3],
   };
 }
@@ -485,7 +550,11 @@ function initializeApp() {
     'secondaryTranslationLabel',
   );
 
-  // reflect current state into UI
+  // ✅ NEW (optional)
+  workSelectEl = document.getElementById('workSelect');
+
+  // reflect state into UI
+  if (workSelectEl) workSelectEl.value = currentWork;
   if (langSelectEl) langSelectEl.value = currentLang;
   if (parallelToggleEl) parallelToggleEl.checked = parallelMode;
 
@@ -495,8 +564,11 @@ function initializeApp() {
     secondarySelectEl.style.display = parallelMode ? 'inline-block' : 'none';
   }
 
-  currentTranslationCode = getTranslationCode(currentLang);
-  secondaryTranslationCode = getTranslationCode(parallelSecondaryLang);
+  currentTranslationCode = getTranslationCode(currentLang, currentWork);
+  secondaryTranslationCode = getTranslationCode(
+    parallelSecondaryLang,
+    currentWork,
+  );
 
   rebuildTranslationDropdown(
     translationSelectEl,
@@ -512,16 +584,14 @@ function initializeApp() {
 
   setupEventListeners();
 
-  // load books for currentLang so parsing works immediately
+  // load books for current work+lang so parsing works
   loadBooks()
-    .then(() => ensureBooksLoaded(parallelSecondaryLang))
+    .then(() => ensureBooksLoaded(parallelSecondaryLang, currentWork))
     .then(() => {
-      // render from URL-derived viewState
       renderFromViewState();
     })
     .catch((e) => {
       console.error(e);
-      // fallback
       loadInitialContent();
     });
 }
@@ -533,12 +603,46 @@ function setupEventListeners() {
     });
   }
 
+  // ✅ NEW: work switch
+  if (workSelectEl) {
+    workSelectEl.addEventListener('change', async () => {
+      currentWork = normalizeWork(workSelectEl.value);
+
+      // refresh translation codes for this work
+      currentTranslationCode = getTranslationCode(currentLang, currentWork);
+      secondaryTranslationCode = getTranslationCode(
+        parallelSecondaryLang,
+        currentWork,
+      );
+
+      rebuildTranslationDropdown(
+        translationSelectEl,
+        currentLang,
+        currentTranslationCode,
+      );
+      rebuildTranslationDropdown(
+        secondaryTranslationSelectEl,
+        parallelSecondaryLang,
+        secondaryTranslationCode,
+      );
+
+      // reload books for new work
+      booksCache = [];
+      bookIndexByNumber = {};
+      await loadBooks();
+      if (parallelMode)
+        await ensureBooksLoaded(parallelSecondaryLang, currentWork);
+
+      writeUrlFromState();
+      renderFromViewState();
+    });
+  }
+
   if (langSelectEl) {
     langSelectEl.addEventListener('change', async () => {
       currentLang = langSelectEl.value;
 
-      // update code selection for new language
-      currentTranslationCode = getTranslationCode(currentLang);
+      currentTranslationCode = getTranslationCode(currentLang, currentWork);
       rebuildTranslationDropdown(
         translationSelectEl,
         currentLang,
@@ -547,7 +651,6 @@ function setupEventListeners() {
 
       await loadBooks();
 
-      // if secondary equals primary, flip it
       if (parallelMode) {
         if (secondarySelectEl) {
           if (
@@ -561,16 +664,18 @@ function setupEventListeners() {
           parallelSecondaryLang = currentLang === 'tr' ? 'en' : 'tr';
         }
 
-        secondaryTranslationCode = getTranslationCode(parallelSecondaryLang);
+        secondaryTranslationCode = getTranslationCode(
+          parallelSecondaryLang,
+          currentWork,
+        );
         rebuildTranslationDropdown(
           secondaryTranslationSelectEl,
           parallelSecondaryLang,
           secondaryTranslationCode,
         );
-        await ensureBooksLoaded(parallelSecondaryLang);
+        await ensureBooksLoaded(parallelSecondaryLang, currentWork);
       }
 
-      // ✅ KEY FIX: resume current view in the NEW language
       writeUrlFromState();
       renderFromViewState();
     });
@@ -597,14 +702,17 @@ function setupEventListeners() {
         parallelSecondaryLang = currentLang === 'tr' ? 'en' : 'tr';
       }
 
-      secondaryTranslationCode = getTranslationCode(parallelSecondaryLang);
+      secondaryTranslationCode = getTranslationCode(
+        parallelSecondaryLang,
+        currentWork,
+      );
       rebuildTranslationDropdown(
         secondaryTranslationSelectEl,
         parallelSecondaryLang,
         secondaryTranslationCode,
       );
       setSecondaryTranslationVisibility(parallelMode);
-      await ensureBooksLoaded(parallelSecondaryLang);
+      await ensureBooksLoaded(parallelSecondaryLang, currentWork);
 
       writeUrlFromState();
       renderFromViewState();
@@ -614,13 +722,16 @@ function setupEventListeners() {
   if (secondarySelectEl) {
     secondarySelectEl.addEventListener('change', async () => {
       parallelSecondaryLang = secondarySelectEl.value;
-      secondaryTranslationCode = getTranslationCode(parallelSecondaryLang);
+      secondaryTranslationCode = getTranslationCode(
+        parallelSecondaryLang,
+        currentWork,
+      );
       rebuildTranslationDropdown(
         secondaryTranslationSelectEl,
         parallelSecondaryLang,
         secondaryTranslationCode,
       );
-      await ensureBooksLoaded(parallelSecondaryLang);
+      await ensureBooksLoaded(parallelSecondaryLang, currentWork);
 
       writeUrlFromState();
       renderFromViewState();
@@ -630,7 +741,7 @@ function setupEventListeners() {
   if (translationSelectEl) {
     translationSelectEl.addEventListener('change', () => {
       currentTranslationCode = translationSelectEl.value;
-      setTranslationCode(currentLang, currentTranslationCode);
+      setTranslationCode(currentLang, currentTranslationCode, currentWork);
 
       writeUrlFromState();
       renderFromViewState();
@@ -640,7 +751,11 @@ function setupEventListeners() {
   if (secondaryTranslationSelectEl) {
     secondaryTranslationSelectEl.addEventListener('change', () => {
       secondaryTranslationCode = secondaryTranslationSelectEl.value;
-      setTranslationCode(parallelSecondaryLang, secondaryTranslationCode);
+      setTranslationCode(
+        parallelSecondaryLang,
+        secondaryTranslationCode,
+        currentWork,
+      );
 
       writeUrlFromState();
       renderFromViewState();
@@ -657,19 +772,22 @@ function setupEventListeners() {
 async function renderFromViewState() {
   try {
     if (viewState.view === 'search') {
-      await runSearch(viewState.query || 'tanrı', { fromState: true });
+      await runSearch(
+        viewState.query || (currentWork === 'quran' ? 'allah' : 'tanrı'),
+        { fromState: true },
+      );
       return;
     }
 
-    // for non-search views we need bookName in current language
-    await ensureBooksLoaded(currentLang);
+    await ensureBooksLoaded(currentLang, currentWork);
 
     const bn = viewState.bookNumber;
     const c = viewState.chapterNumber;
 
     if (bn == null || c == null) {
-      // fallback
-      await runSearch('tanrı', { fromState: true });
+      await runSearch(currentWork === 'quran' ? 'allah' : 'tanrı', {
+        fromState: true,
+      });
       return;
     }
 
@@ -677,6 +795,7 @@ async function renderFromViewState() {
       currentLang,
       bn,
       viewState.bookName || '',
+      currentWork,
     );
 
     if (viewState.view === 'chapter') {
@@ -694,7 +813,9 @@ async function renderFromViewState() {
       return;
     }
 
-    await runSearch('tanrı', { fromState: true });
+    await runSearch(currentWork === 'quran' ? 'allah' : 'tanrı', {
+      fromState: true,
+    });
   } catch (e) {
     console.error(e);
     showError(`${t('Gösterim hatası', 'Render error')}: ${e.message}`);
@@ -713,7 +834,6 @@ async function performSearch() {
   await runSearch(query);
 }
 
-// ✅ renamed internal search to avoid window.search recursion / browser collisions
 async function runSearch(query, opts = {}) {
   const rawQuery = (query || '').trim();
   const translatedQuery = translateQueryForCurrentLang(rawQuery);
@@ -724,8 +844,7 @@ async function runSearch(query, opts = {}) {
   setResultsDirSingleLang();
 
   try {
-    // ensure books loaded so parsing works (Arabic book names too)
-    await ensureBooksLoaded(currentLang);
+    await ensureBooksLoaded(currentLang, currentWork);
 
     // 1) verse reference
     const verseRef = tryParseVerseReference(rawQuery);
@@ -745,18 +864,16 @@ async function runSearch(query, opts = {}) {
       return;
     }
 
-    // 3) text search (auto-translated if Arabic)
-    const code = currentTranslationCode || getTranslationCode(currentLang);
+    // 3) text search
+    const code =
+      currentTranslationCode || getTranslationCode(currentLang, currentWork);
     const response = await fetch(
-      `${API_BASE}/search?q=${encodeURIComponent(
-        translatedQuery,
-      )}&${buildQs(currentLang, code)}`,
+      `${API_BASE}/search?q=${encodeURIComponent(translatedQuery)}&${buildQs(currentLang, code)}`,
     );
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
     const verses = await response.json();
     if (!verses || verses.length === 0) {
-      // show query user typed, but also hint translation if used
       const suffix =
         currentLang === 'ar' && translatedQuery !== rawQuery
           ? ` (${t('Arapça arandı', 'searched Arabic')}: "${translatedQuery}")`
@@ -764,7 +881,7 @@ async function runSearch(query, opts = {}) {
       showEmpty(
         `"${rawQuery}" ${t('için sonuç bulunamadı', 'has no results')}${suffix}`,
       );
-      // update state
+
       viewState = {
         view: 'search',
         query: rawQuery,
@@ -780,7 +897,6 @@ async function runSearch(query, opts = {}) {
 
     displayResults(verses, `${t('Arama', 'Search')}: "${rawQuery}"`);
 
-    // update state
     viewState = {
       view: 'search',
       query: rawQuery,
@@ -801,31 +917,25 @@ async function runSearch(query, opts = {}) {
 
 // -------------------- Verse range (bookName input) --------------------
 async function showVerseRange(bookName, chapterNumber, verseRange) {
-  // best: resolve to bookNumber and route to by-number-based state
-  await ensureBooksLoaded(currentLang);
-  const bn = tryResolveBookNumber(currentLang, bookName);
+  await ensureBooksLoaded(currentLang, currentWork);
+  const bn = tryResolveBookNumber(currentLang, bookName, currentWork);
   if (bn != null) {
     await showVerseRangeByNumber(bn, chapterNumber, verseRange, bookName);
     return;
   }
-
-  // fallback (should be rare)
   await showVerseRangeByName(bookName, chapterNumber, verseRange);
 }
 
 async function showVerseRangeByName(bookName, chapterNumber, verseRange) {
   showLoading(
-    `${bookName} ${chapterNumber}:${verseRange} ${t(
-      'yükleniyor...',
-      'loading...',
-    )}`,
+    `${bookName} ${chapterNumber}:${verseRange} ${t('yükleniyor...', 'loading...')}`,
   );
   setResultsDirSingleLang();
 
   try {
     const primaryLang = currentLang;
     const primaryCode =
-      currentTranslationCode || getTranslationCode(primaryLang);
+      currentTranslationCode || getTranslationCode(primaryLang, currentWork);
 
     const primaryRes = await fetch(
       `${API_BASE}/${encodeURIComponent(bookName)}/${chapterNumber}/${encodeURIComponent(
@@ -838,7 +948,6 @@ async function showVerseRangeByName(bookName, chapterNumber, verseRange) {
       );
     const primaryVerses = await primaryRes.json();
 
-    // update state using bookNumber if present
     const bookNumber = primaryVerses?.[0]?.bookNumber ?? null;
     viewState = {
       view: 'range',
@@ -862,9 +971,7 @@ async function showVerseRangeByName(bookName, chapterNumber, verseRange) {
     await showParallelRange(primaryVerses, bookName, chapterNumber, verseRange);
   } catch (e) {
     showError(
-      `${t('Ayet aralığı getirilemedi', 'Could not load verse range')}: ${
-        e.message
-      }`,
+      `${t('Ayet aralığı getirilemedi', 'Could not load verse range')}: ${e.message}`,
     );
   }
 }
@@ -876,24 +983,18 @@ async function showVerseRangeByNumber(
   fallbackBookName,
 ) {
   showLoading(
-    `${fallbackBookName || ''} ${chapterNumber}:${verseRange} ${t(
-      'yükleniyor...',
-      'loading...',
-    )}`,
+    `${fallbackBookName || ''} ${chapterNumber}:${verseRange} ${t('yükleniyor...', 'loading...')}`,
   );
   setResultsDirSingleLang();
 
   try {
     const primaryLang = currentLang;
     const primaryCode =
-      currentTranslationCode || getTranslationCode(primaryLang);
+      currentTranslationCode || getTranslationCode(primaryLang, currentWork);
 
-    // NOTE: range endpoint by-number not provided by your backend; we load by chapter and slice.
+    // range endpoint by-number not present => load chapter and slice
     const primaryRes = await fetch(
-      `${API_BASE}/by-number/${bookNumber}/${chapterNumber}?${buildQs(
-        primaryLang,
-        primaryCode,
-      )}`,
+      `${API_BASE}/by-number/${bookNumber}/${chapterNumber}?${buildQs(primaryLang, primaryCode)}`,
     );
     if (!primaryRes.ok)
       throw new Error(
@@ -907,6 +1008,7 @@ async function showVerseRangeByNumber(
       primaryLang,
       bookNumber,
       fallbackBookName,
+      currentWork,
     );
 
     viewState = {
@@ -937,9 +1039,7 @@ async function showVerseRangeByNumber(
     );
   } catch (e) {
     showError(
-      `${t('Ayet aralığı getirilemedi', 'Could not load verse range')}: ${
-        e.message
-      }`,
+      `${t('Ayet aralığı getirilemedi', 'Could not load verse range')}: ${e.message}`,
     );
   }
 }
@@ -967,15 +1067,12 @@ async function showParallelRange(
     return;
   }
 
-  await ensureBooksLoaded(secondaryLang);
+  await ensureBooksLoaded(secondaryLang, currentWork);
 
   const secondaryCode =
-    secondaryTranslationCode || getTranslationCode(secondaryLang);
+    secondaryTranslationCode || getTranslationCode(secondaryLang, currentWork);
   const secRes = await fetch(
-    `${API_BASE}/by-number/${bookNumber}/${chapterNumber}?${buildQs(
-      secondaryLang,
-      secondaryCode,
-    )}`,
+    `${API_BASE}/by-number/${bookNumber}/${chapterNumber}?${buildQs(secondaryLang, secondaryCode)}`,
   );
 
   let secondaryVerses = [];
@@ -1002,35 +1099,28 @@ async function showParallelRange(
 
 // -------------------- Chapter --------------------
 async function showChapter(bookName, chapterNumber) {
-  await ensureBooksLoaded(currentLang);
-  const bn = tryResolveBookNumber(currentLang, bookName);
+  await ensureBooksLoaded(currentLang, currentWork);
+  const bn = tryResolveBookNumber(currentLang, bookName, currentWork);
   if (bn != null) {
     await showChapterByNumber(bn, chapterNumber, bookName);
     return;
   }
-  // fallback: use name endpoint
   await showChapterByName(bookName, chapterNumber);
 }
 
 async function showChapterByName(bookName, chapterNumber) {
   showLoading(
-    `${bookName} ${chapterNumber}. ${t(
-      'bölüm yükleniyor...',
-      'chapter loading...',
-    )}`,
+    `${bookName} ${chapterNumber}. ${t('bölüm yükleniyor...', 'chapter loading...')}`,
   );
   setResultsDirSingleLang();
 
   try {
     const primaryLang = currentLang;
     const primaryCode =
-      currentTranslationCode || getTranslationCode(primaryLang);
+      currentTranslationCode || getTranslationCode(primaryLang, currentWork);
 
     const res = await fetch(
-      `${API_BASE}/${encodeURIComponent(bookName)}/${chapterNumber}?${buildQs(
-        primaryLang,
-        primaryCode,
-      )}`,
+      `${API_BASE}/${encodeURIComponent(bookName)}/${chapterNumber}?${buildQs(primaryLang, primaryCode)}`,
     );
     if (!res.ok)
       throw new Error(t('Bölüm getirilemedi', 'Could not load chapter'));
@@ -1068,23 +1158,17 @@ async function showChapterByNumber(
   fallbackBookName,
 ) {
   showLoading(
-    `${fallbackBookName || ''} ${chapterNumber}. ${t(
-      'bölüm yükleniyor...',
-      'chapter loading...',
-    )}`,
+    `${fallbackBookName || ''} ${chapterNumber}. ${t('bölüm yükleniyor...', 'chapter loading...')}`,
   );
   setResultsDirSingleLang();
 
   try {
     const primaryLang = currentLang;
     const primaryCode =
-      currentTranslationCode || getTranslationCode(primaryLang);
+      currentTranslationCode || getTranslationCode(primaryLang, currentWork);
 
     const res = await fetch(
-      `${API_BASE}/by-number/${bookNumber}/${chapterNumber}?${buildQs(
-        primaryLang,
-        primaryCode,
-      )}`,
+      `${API_BASE}/by-number/${bookNumber}/${chapterNumber}?${buildQs(primaryLang, primaryCode)}`,
     );
     if (!res.ok)
       throw new Error(t('Bölüm getirilemedi', 'Could not load chapter'));
@@ -1094,6 +1178,7 @@ async function showChapterByNumber(
       primaryLang,
       bookNumber,
       fallbackBookName,
+      currentWork,
     );
 
     viewState = {
@@ -1141,15 +1226,12 @@ async function showParallelChapter(
     return;
   }
 
-  await ensureBooksLoaded(secondaryLang);
+  await ensureBooksLoaded(secondaryLang, currentWork);
 
   const secondaryCode =
-    secondaryTranslationCode || getTranslationCode(secondaryLang);
+    secondaryTranslationCode || getTranslationCode(secondaryLang, currentWork);
   const secRes = await fetch(
-    `${API_BASE}/by-number/${bookNumber}/${chapterNumber}?${buildQs(
-      secondaryLang,
-      secondaryCode,
-    )}`,
+    `${API_BASE}/by-number/${bookNumber}/${chapterNumber}?${buildQs(secondaryLang, secondaryCode)}`,
   );
 
   let secondaryVerses = [];
@@ -1172,8 +1254,8 @@ async function showParallelChapter(
 
 // -------------------- Context --------------------
 async function showVerseContext(bookName, chapterNumber, verseNumber) {
-  await ensureBooksLoaded(currentLang);
-  const bn = tryResolveBookNumber(currentLang, bookName);
+  await ensureBooksLoaded(currentLang, currentWork);
+  const bn = tryResolveBookNumber(currentLang, bookName, currentWork);
   if (bn != null) {
     await showVerseContextByNumber(bn, chapterNumber, verseNumber, bookName);
     return;
@@ -1187,13 +1269,11 @@ async function showVerseContextByName(bookName, chapterNumber, verseNumber) {
 
   try {
     const lang = currentLang;
-    const code = currentTranslationCode || getTranslationCode(lang);
+    const code =
+      currentTranslationCode || getTranslationCode(lang, currentWork);
 
     const response = await fetch(
-      `${API_BASE}/${encodeURIComponent(bookName)}/${chapterNumber}?${buildQs(
-        lang,
-        code,
-      )}`,
+      `${API_BASE}/${encodeURIComponent(bookName)}/${chapterNumber}?${buildQs(lang, code)}`,
     );
     if (!response.ok)
       throw new Error(t('Ayet bağlamı getirilemedi', 'Could not load context'));
@@ -1236,7 +1316,8 @@ async function showVerseContextByNumber(
 
   try {
     const lang = currentLang;
-    const code = currentTranslationCode || getTranslationCode(lang);
+    const code =
+      currentTranslationCode || getTranslationCode(lang, currentWork);
 
     const response = await fetch(
       `${API_BASE}/by-number/${bookNumber}/${chapterNumber}?${buildQs(lang, code)}`,
@@ -1245,7 +1326,12 @@ async function showVerseContextByNumber(
       throw new Error(t('Ayet bağlamı getirilemedi', 'Could not load context'));
 
     const allVerses = await response.json();
-    const bookName = getBookNameByNumber(lang, bookNumber, fallbackBookName);
+    const bookName = getBookNameByNumber(
+      lang,
+      bookNumber,
+      fallbackBookName,
+      currentWork,
+    );
 
     viewState = {
       view: 'context',
@@ -1277,7 +1363,8 @@ async function getRandomVerse() {
   setResultsDirSingleLang();
 
   try {
-    const code = currentTranslationCode || getTranslationCode(currentLang);
+    const code =
+      currentTranslationCode || getTranslationCode(currentLang, currentWork);
     const response = await fetch(
       `${API_BASE}/random?${buildQs(currentLang, code)}`,
     );
@@ -1336,10 +1423,7 @@ function displayResults(verses, title) {
 
   resultsDiv.innerHTML = `
     <div class="results-header">
-      ${escapeHtml(title)} • ${Array.isArray(verses) ? verses.length : 0} ${t(
-        'sonuç',
-        'results',
-      )}
+      ${escapeHtml(title)} • ${Array.isArray(verses) ? verses.length : 0} ${t('sonuç', 'results')}
     </div>
   `;
 
@@ -1357,21 +1441,15 @@ function createVerseElement(verse) {
 
   verseElement.innerHTML = `
     <div class="verse-reference">
-      ${escapeHtml(verse.bookName)} ${escapeHtml(
-        String(verse.chapterNumber),
-      )}:${escapeHtml(String(verse.verseNumber))}
+      ${escapeHtml(verse.bookName)} ${escapeHtml(String(verse.chapterNumber))}:${escapeHtml(
+        String(verse.verseNumber),
+      )}
     </div>
     <div class="verse-text">${escapeHtml(verse.text || '')}</div>
 
     <div class="verse-actions">
-      <button class="btn-small btn-success js-read-chapter">📚 ${t(
-        'Tüm Bölümü Oku',
-        'Read Chapter',
-      )}</button>
-      <button class="btn-small btn-warning js-view-context">🔍 ${t(
-        'Bağlamında Gör',
-        'View Context',
-      )}</button>
+      <button class="btn-small btn-success js-read-chapter">📚 ${t('Tüm Bölümü Oku', 'Read Chapter')}</button>
+      <button class="btn-small btn-warning js-view-context">🔍 ${t('Bağlamında Gör', 'View Context')}</button>
     </div>
   `;
 
@@ -1400,23 +1478,18 @@ function displayChapterView(verses, bookName, chapterNumber) {
   resultsDiv.innerHTML = `
     <div class="chapter-header">
       <h2 class="chapter-title">
-        ${bdiWrap(escapeHtml(bookName))} <span class="chapter-num">${escapeHtml(
-          String(chapterNumber),
-        )}</span>
+        ${bdiWrap(escapeHtml(bookName))} <span class="chapter-num">${escapeHtml(String(chapterNumber))}</span>
       </h2>
-      <button class="btn btn-primary" id="backToSearchBtn">← ${t(
-        "Arama'ya Dön",
-        'Back to Search',
-      )}</button>
+      <button class="btn btn-primary" id="backToSearchBtn">← ${t("Arama'ya Dön", 'Back to Search')}</button>
     </div>
 
     <div class="chapter-content">
       ${uniqueVerses
         .map(
           (v) => `
-          <div class="verse-in-chapter" data-verse="${escapeHtml(
+          <div class="verse-in-chapter" data-verse="${escapeHtml(String(v.verseNumber))}" id="verse-${escapeHtml(
             String(v.verseNumber),
-          )}" id="verse-${escapeHtml(String(v.verseNumber))}">
+          )}">
             <span class="verse-number">${escapeHtml(String(v.verseNumber))}</span>
             <span class="verse-text">${escapeHtml(v.text || '')}</span>
           </div>
@@ -1425,20 +1498,14 @@ function displayChapterView(verses, bookName, chapterNumber) {
         .join('')}
     </div>
 
-    <button id="prevChapterArrow" class="chapter-nav-arrow left" aria-label="${t(
-      'Önceki bölüm',
-      'Previous chapter',
-    )}">‹</button>
-    <button id="nextChapterArrow" class="chapter-nav-arrow right" aria-label="${t(
-      'Sonraki bölüm',
-      'Next chapter',
-    )}">›</button>
+    <button id="prevChapterArrow" class="chapter-nav-arrow left" aria-label="${t('Önceki bölüm', 'Previous chapter')}">‹</button>
+    <button id="nextChapterArrow" class="chapter-nav-arrow right" aria-label="${t('Sonraki bölüm', 'Next chapter')}">›</button>
   `;
 
   document.getElementById('backToSearchBtn')?.addEventListener('click', () => {
     viewState = {
       view: 'search',
-      query: viewState.query || 'tanrı',
+      query: viewState.query || (currentWork === 'quran' ? 'allah' : 'tanrı'),
       bookNumber: null,
       chapterNumber: null,
       verseRange: null,
@@ -1468,29 +1535,19 @@ function displayContextView(verses, bookName, chapterNumber, targetVerse) {
   resultsDiv.innerHTML = `
     <div class="context-header">
       <h2 class="context-title">
-        ${bdiWrap(escapeHtml(bookName))} ${escapeHtml(
-          String(chapterNumber),
-        )}:${escapeHtml(String(targetVerse))}
+        ${bdiWrap(escapeHtml(bookName))} ${escapeHtml(String(chapterNumber))}:${escapeHtml(String(targetVerse))}
         — ${t('Bağlam', 'Context')}
       </h2>
 
-      <button class="btn btn-primary" id="backToSearchBtn2">← ${t(
-        "Arama'ya Dön",
-        'Back to Search',
-      )}</button>
-      <button class="btn btn-secondary" id="readFullChapterBtn">${t(
-        'Tüm Bölümü Oku',
-        'Read Full Chapter',
-      )}</button>
+      <button class="btn btn-primary" id="backToSearchBtn2">← ${t("Arama'ya Dön", 'Back to Search')}</button>
+      <button class="btn btn-secondary" id="readFullChapterBtn">${t('Tüm Bölümü Oku', 'Read Full Chapter')}</button>
     </div>
 
     <div class="context-content">
       ${unique
         .map(
           (v) => `
-          <div class="verse-in-context ${
-            v.verseNumber === targetVerse ? 'highlighted-verse' : ''
-          }"
+          <div class="verse-in-context ${v.verseNumber === targetVerse ? 'highlighted-verse' : ''}"
                data-verse="${escapeHtml(String(v.verseNumber))}"
                id="verse-${escapeHtml(String(v.verseNumber))}">
             <span class="verse-number">${escapeHtml(String(v.verseNumber))}</span>
@@ -1505,7 +1562,7 @@ function displayContextView(verses, bookName, chapterNumber, targetVerse) {
   document.getElementById('backToSearchBtn2')?.addEventListener('click', () => {
     viewState = {
       view: 'search',
-      query: viewState.query || 'tanrı',
+      query: viewState.query || (currentWork === 'quran' ? 'allah' : 'tanrı'),
       bookNumber: null,
       chapterNumber: null,
       verseRange: null,
@@ -1536,7 +1593,7 @@ function displayContextView(verses, bookName, chapterNumber, targetVerse) {
   }, 80);
 }
 
-// -------------------- Parallel views (dir per column) --------------------
+// -------------------- Parallel views --------------------
 function displayParallelChapterView(
   rows,
   bookName,
@@ -1600,7 +1657,7 @@ function displayParallelChapterView(
   document.getElementById('backToSearchBtn')?.addEventListener('click', () => {
     viewState = {
       view: 'search',
-      query: viewState.query || 'tanrı',
+      query: viewState.query || (currentWork === 'quran' ? 'allah' : 'tanrı'),
       bookNumber: null,
       chapterNumber: null,
       verseRange: null,
@@ -1680,7 +1737,7 @@ function displayParallelRangeView(
   document.getElementById('backToSearchBtn')?.addEventListener('click', () => {
     viewState = {
       view: 'search',
-      query: viewState.query || 'tanrı',
+      query: viewState.query || (currentWork === 'quran' ? 'allah' : 'tanrı'),
       bookNumber: null,
       chapterNumber: null,
       verseRange: null,
@@ -1708,7 +1765,12 @@ function wireChapterCopyActions(bookNumber, fallbackBookName, chapterNumber) {
 
       const bookLocalized =
         bookNumber != null
-          ? getBookNameByNumber(currentLang, bookNumber, fallbackBookName)
+          ? getBookNameByNumber(
+              currentLang,
+              bookNumber,
+              fallbackBookName,
+              currentWork,
+            )
           : fallbackBookName;
 
       const ref = makeRef(bookLocalized, chapterNumber, verseNum);
@@ -1731,7 +1793,12 @@ function wireContextCopyActions(bookNumber, fallbackBookName, chapterNumber) {
 
       const bookLocalized =
         bookNumber != null
-          ? getBookNameByNumber(currentLang, bookNumber, fallbackBookName)
+          ? getBookNameByNumber(
+              currentLang,
+              bookNumber,
+              fallbackBookName,
+              currentWork,
+            )
           : fallbackBookName;
 
       const ref = makeRef(bookLocalized, chapterNumber, verseNum);
@@ -1741,10 +1808,6 @@ function wireContextCopyActions(bookNumber, fallbackBookName, chapterNumber) {
   });
 }
 
-/**
- * PARALLEL COPY:
- * clicking a verse number copies ONLY the clicked side
- */
 function wireParallelCopyActions(
   bookNumber,
   chapterNumber,
@@ -1772,7 +1835,12 @@ function wireParallelCopyActions(
       const label = (lang || '').toUpperCase();
       const verseText = (isLeft ? leftText : rightText) || '';
 
-      const bookLocalized = getBookNameByNumber(lang, bookNumber, '');
+      const bookLocalized = getBookNameByNumber(
+        lang,
+        bookNumber,
+        '',
+        currentWork,
+      );
       const ref = makeRef(bookLocalized || '', chapterNumber, verseNum);
 
       badge.addEventListener('click', async (e) => {
@@ -1785,7 +1853,7 @@ function wireParallelCopyActions(
   });
 }
 
-// -------------------- Prev/Next navigation (by bookNumber) --------------------
+// -------------------- Prev/Next navigation --------------------
 function wirePrevNextArrows(bookNumber, chapterNumber, prevId, nextId) {
   const prevBtn = document.getElementById(prevId);
   const nextBtn = document.getElementById(nextId);
@@ -1861,11 +1929,11 @@ function filterByVerseRange(verses, verseRange) {
   const clean = String(verseRange || '').trim();
   if (!clean) return verses;
 
-  // supports: "3-5" or "3,5,7-9"
   const parts = clean
     .split(',')
     .map((x) => x.trim())
     .filter(Boolean);
+
   const wanted = new Set();
 
   for (const p of parts) {
@@ -1928,7 +1996,7 @@ function showEmpty(message) {
 function loadInitialContent() {
   viewState = {
     view: 'search',
-    query: 'tanrı',
+    query: defaultSearchTerm(),
     bookNumber: null,
     chapterNumber: null,
     verseRange: null,
@@ -1958,7 +2026,6 @@ function escapeHtml(unsafe) {
     .replace(/'/g, '&#039;');
 }
 
-// toast
 function showToast(message) {
   let el = document.getElementById('toast');
   if (!el) {
@@ -2010,13 +2077,15 @@ function makeRef(bookName, chapterNumber, verseNumber) {
 function rebuildTranslationDropdown(selectEl, lang, selectedCode) {
   if (!selectEl) return;
   const l = (lang || '').trim().toLowerCase();
-  const list = TRANSLATIONS.filter((t) => t.lang === l);
+
+  const itemsAll = getTranslationsListFor(currentWork);
+  const list = itemsAll.filter((t) => t.lang === l);
 
   const fallback = [
     {
-      code: defaultTranslationForLang(l),
+      code: getDefaultTranslationFor(currentWork, l),
       lang: l,
-      label: defaultTranslationForLang(l),
+      label: getDefaultTranslationFor(currentWork, l),
     },
   ];
   const items = list.length ? list : fallback;
@@ -2029,10 +2098,29 @@ function rebuildTranslationDropdown(selectEl, lang, selectedCode) {
     .join('');
 
   const wanted =
-    selectedCode || getTranslationCode(l) || defaultTranslationForLang(l);
+    selectedCode ||
+    getTranslationCode(l, currentWork) ||
+    getDefaultTranslationFor(currentWork, l);
   selectEl.value = items.some((x) => x.code === wanted)
     ? wanted
     : items[0].code;
+}
+
+function defaultSearchTerm() {
+  // Quran defaults
+  if (normalizeWork(currentWork) === 'quran') {
+    if ((currentLang || '').toLowerCase() === 'ar') return 'الله';
+    // you can choose 'allah' or 'rahman' etc
+    return 'allah';
+  }
+
+  // Bible defaults
+  if ((currentLang || '').toLowerCase() === 'tr') return 'tanrı';
+  return 'god';
+}
+
+function isQuran() {
+  return normalizeWork(currentWork) === 'quran';
 }
 
 function setSecondaryTranslationVisibility(isParallel) {
@@ -2173,8 +2261,6 @@ function logout() {
 
 // -------------------- Expose globals used by HTML --------------------
 window.performSearch = performSearch;
-
-// ✅ HTML uses window.search('...'), internal function is runSearch (no recursion)
 window.search = runSearch;
 
 window.getRandomVerse = getRandomVerse;
