@@ -47,6 +47,17 @@ namespace ScriptureExplorer.Controllers
             }
         }
 
+        [HttpPost("quran/names/seed")]
+        public async Task<ActionResult<ImportResult>> SeedQuranNames([FromQuery] bool force = false)
+        {
+            var result = await _importService.SeedQuranSurahNamesAsync(force);
+
+            if (result.Success)
+                return Ok(result);
+
+            return BadRequest(result);
+        }
+
         [HttpPost("kjv")]
         public async Task<ActionResult<ImportResult>> ImportKjv([FromQuery] bool force = false)
         {

@@ -201,6 +201,115 @@ namespace ScriptureExplorer.Services
             }
         }
 
+        public async Task<ImportResult> SeedQuranSurahNamesAsync(bool force = false)
+        {
+            var result = new ImportResult();
+
+            // ---- Minimal lists (you can extend/adjust spellings anytime) ----
+            // 1..114
+            var en = new string[]
+            {
+        "Al-Fatihah","Al-Baqarah","Aal-E-Imran","An-Nisa","Al-Ma'idah","Al-An'am","Al-A'raf","Al-Anfal","At-Tawbah","Yunus",
+        "Hud","Yusuf","Ar-Ra'd","Ibrahim","Al-Hijr","An-Nahl","Al-Isra","Al-Kahf","Maryam","Ta-Ha",
+        "Al-Anbiya","Al-Hajj","Al-Mu'minun","An-Nur","Al-Furqan","Ash-Shu'ara","An-Naml","Al-Qasas","Al-Ankabut","Ar-Rum",
+        "Luqman","As-Sajdah","Al-Ahzab","Saba","Fatir","Ya-Sin","As-Saffat","Sad","Az-Zumar","Ghafir",
+        "Fussilat","Ash-Shura","Az-Zukhruf","Ad-Dukhan","Al-Jathiyah","Al-Ahqaf","Muhammad","Al-Fath","Al-Hujurat","Qaf",
+        "Adh-Dhariyat","At-Tur","An-Najm","Al-Qamar","Ar-Rahman","Al-Waqi'ah","Al-Hadid","Al-Mujadila","Al-Hashr","Al-Mumtahanah",
+        "As-Saff","Al-Jumu'ah","Al-Munafiqun","At-Taghabun","At-Talaq","At-Tahrim","Al-Mulk","Al-Qalam","Al-Haqqah","Al-Ma'arij",
+        "Nuh","Al-Jinn","Al-Muzzammil","Al-Muddaththir","Al-Qiyamah","Al-Insan","Al-Mursalat","An-Naba","An-Nazi'at","Abasa",
+        "At-Takwir","Al-Infitar","Al-Mutaffifin","Al-Inshiqaq","Al-Buruj","At-Tariq","Al-A'la","Al-Ghashiyah","Al-Fajr","Al-Balad",
+        "Ash-Shams","Al-Layl","Ad-Duha","Ash-Sharh","At-Tin","Al-Alaq","Al-Qadr","Al-Bayyinah","Az-Zalzalah","Al-Adiyat",
+        "Al-Qari'ah","At-Takathur","Al-Asr","Al-Humazah","Al-Fil","Quraysh","Al-Ma'un","Al-Kawthar","Al-Kafirun","An-Nasr",
+        "Al-Masad","Al-Ikhlas","Al-Falaq","An-Nas"
+            };
+
+            var tr = new string[]
+            {
+        "Fâtiha","Bakara","Âl-i İmrân","Nisâ","Mâide","En'âm","A'râf","Enfâl","Tevbe","Yûnus",
+        "Hûd","Yûsuf","Ra'd","İbrâhîm","Hicr","Nahl","İsrâ","Kehf","Meryem","Tâhâ",
+        "Enbiyâ","Hac","Mü'minûn","Nûr","Furkân","Şuarâ","Neml","Kasas","Ankebût","Rûm",
+        "Lokmân","Secde","Ahzâb","Sebe","Fâtır","Yâsîn","Sâffât","Sâd","Zümer","Mü'min (Gâfir)",
+        "Fussilet","Şûrâ","Zuhruf","Duhân","Câsiye","Ahkâf","Muhammed","Fetih","Hucurât","Kâf",
+        "Zâriyât","Tûr","Necm","Kamer","Rahmân","Vâkıa","Hadîd","Mücâdele","Haşr","Mümtehine",
+        "Saff","Cuma","Münâfikûn","Teğâbün","Talâk","Tahrîm","Mülk","Kalem","Hâkka","Meâric",
+        "Nûh","Cin","Müzzemmil","Müddessir","Kıyâmet","İnsân","Mürselât","Nebe","Nâziât","Abese",
+        "Tekvîr","İnfitâr","Mutaffifîn","İnşikâk","Bürûc","Târık","A'lâ","Gâşiye","Fecr","Beled",
+        "Şems","Leyl","Duhâ","İnşirâh","Tîn","Alak","Kadir","Beyyine","Zilzâl","Âdiyât",
+        "Kâria","Tekâsür","Asr","Hümeze","Fîl","Kureyş","Mâûn","Kevser","Kâfirûn","Nasr",
+        "Tebbet (Mesed)","İhlâs","Felak","Nâs"
+            };
+
+            // Arabic (common Uthmani-style names; you can tweak later)
+            var ar = new string[]
+            {
+        "الفاتحة","البقرة","آل عمران","النساء","المائدة","الأنعام","الأعراف","الأنفال","التوبة","يونس",
+        "هود","يوسف","الرعد","إبراهيم","الحجر","النحل","الإسراء","الكهف","مريم","طه",
+        "الأنبياء","الحج","المؤمنون","النور","الفرقان","الشعراء","النمل","القصص","العنكبوت","الروم",
+        "لقمان","السجدة","الأحزاب","سبإ","فاطر","يس","الصافات","ص","الزمر","غافر",
+        "فصلت","الشورى","الزخرف","الدخان","الجاثية","الأحقاف","محمد","الفتح","الحجرات","ق",
+        "الذاريات","الطور","النجم","القمر","الرحمن","الواقعة","الحديد","المجادلة","الحشر","الممتحنة",
+        "الصف","الجمعة","المنافقون","التغابن","الطلاق","التحريم","الملك","القلم","الحاقة","المعارج",
+        "نوح","الجن","المزمل","المدثر","القيامة","الإنسان","المرسلات","النبأ","النازعات","عبس",
+        "التكوير","الانفطار","المطففين","الانشقاق","البروج","الطارق","الأعلى","الغاشية","الفجر","البلد",
+        "الشمس","الليل","الضحى","الشرح","التين","العلق","القدر","البينة","الزلزلة","العاديات",
+        "القارعة","التكاثر","العصر","الهمزة","الفيل","قريش","الماعون","الكوثر","الكافرون","النصر",
+        "المسد","الإخلاص","الفلق","الناس"
+            };
+
+            if (en.Length != 114 || tr.Length != 114 || ar.Length != 114)
+                return new ImportResult { Success = false, Message = "Surah lists must be length 114." };
+
+            if (force)
+            {
+                await _context.BookNames
+                    .Where(bn => bn.Book.Work == Work.Quran)
+                    .ExecuteDeleteAsync();
+            }
+
+            // Ensure all 114 Books exist
+            for (int surah = 1; surah <= 114; surah++)
+            {
+                var book = await _context.Books.FirstOrDefaultAsync(b => b.Work == Work.Quran && b.BookNumber == surah);
+                if (book == null)
+                {
+                    book = new Book
+                    {
+                        Work = Work.Quran,
+                        BookNumber = surah,
+                        Testament = Testament.Old // ignored for Quran but required by model
+                    };
+                    _context.Books.Add(book);
+                    await _context.SaveChangesAsync();
+                }
+
+                // Add names if missing
+                await EnsureBookNameAsync(book.Id, "en", en[surah - 1]);
+                await EnsureBookNameAsync(book.Id, "tr", tr[surah - 1]);
+                await EnsureBookNameAsync(book.Id, "ar", ar[surah - 1]);
+            }
+
+            await _context.SaveChangesAsync();
+
+            result.Success = true;
+            result.Message = "Quran Surah names seeded.";
+            result.BooksImported = 114;
+            result.TranslationsImported = 3; // languages of names
+            return result;
+        }
+
+        private async Task EnsureBookNameAsync(int bookId, string lang, string name)
+        {
+            var exists = await _context.BookNames.AnyAsync(n => n.BookId == bookId && n.Lang == lang);
+            if (exists) return;
+
+            _context.BookNames.Add(new BookName
+            {
+                BookId = bookId,
+                Lang = lang,
+                Name = name
+            });
+        }
+
 
         public async Task<ImportResult> ImportKjvBibleAsync(string filePath, bool forceReimport = false)
         {

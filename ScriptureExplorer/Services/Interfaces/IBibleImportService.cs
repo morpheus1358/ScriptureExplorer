@@ -25,6 +25,9 @@ namespace ScriptureExplorer.Services.Interfaces
                 bool forceReimport
             );
 
+        Task<ImportResult> SeedQuranSurahNamesAsync(bool force = false);
+
+
 
         // ✅ match your controller + service (2 args)
         Task<ImportResult> ImportKjvBibleAsync(string filePath, bool forceReimport = false);

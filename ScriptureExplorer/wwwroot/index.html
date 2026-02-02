@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ScriptureExplorer - Türkçe Kutsal Kitap</title>
+  <title>ScriptureExplorer</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 
@@ -11,24 +11,33 @@
 <header>
   <div class="container">
     <h1>ScriptureExplorer</h1>
-    <p>Türkçe Kutsal Kitap Arama ve Keşif Platformu</p>
+    <p id="subtitle">Türkçe Kutsal Kitap Arama ve Keşif Platformu</p>
 
-    <!-- ================= LANGUAGE / TRANSLATION BAR ================= -->
+    <!-- ================= WORK / LANGUAGE / TRANSLATION BAR ================= -->
     <div class="language-switch">
 
+      <!-- ✅ Work selector (Bible / Quran) -->
+      <label for="workSelect" style="margin-right:6px;">
+        <span class="lbl">Metin / Work:</span>
+      </label>
+      <select id="workSelect">
+        <option value="bible">Bible</option>
+        <option value="quran">Qur’an</option>
+      </select>
+
       <!-- Primary language -->
-      <label for="languageSelect">
+      <label for="languageSelect" style="margin-left:12px;">
         <span class="lbl">Dil / Language:</span>
       </label>
       <select id="languageSelect">
-        <option value="tr">Türkçe (TBS)</option>
-        <option value="en">English (KJV)</option>
+        <option value="tr">Türkçe</option>
+        <option value="en">English</option>
         <option value="fr">Français</option>
         <option value="es">Español</option>
         <option value="de">Deutsch</option>
         <option value="ru">Русский</option>
         <option value="nl">Nederlands</option>
-        <option value="ar">العربية (SVD)</option>
+        <option value="ar">العربية</option>
       </select>
 
       <!-- Primary translation -->
@@ -84,28 +93,28 @@
 
   <!-- SEARCH BOX -->
   <div class="search-box">
-    <h2>Kutsal Kitap'ta Ara</h2>
+    <!-- ✅ Title becomes dynamic-friendly (optional JS can change it) -->
+    <h2 id="searchTitle">Ara / Search</h2>
 
-    <div class="quick-links">
-      <button class="quick-link" onclick="search('tanrı')">Tanrı</button>
-      <button class="quick-link" onclick="search('isa')">İsa</button>
-      <button class="quick-link" onclick="search('sevgi')">Sevgi</button>
-      <button class="quick-link" onclick="search('iman')">İman</button>
-      <button class="quick-link" onclick="search('Yuhanna 3:16')">Yuhanna 3:16</button>
-      <button class="quick-link" onclick="search('Matta 1')">Matta 1</button>
-      <button class="quick-link" onclick="search('Çölde Sayım 12')">Çölde Sayım 12</button>
-      <button class="quick-link" onclick="search('1. Krallar 5')">1. Krallar 5</button>
-    </div>
+    <!-- ✅ Quick links become dynamic (app.js fills this) -->
+    <div class="quick-links" id="quickLinks"></div>
 
     <div class="input-group">
       <input
         type="text"
         id="searchInput"
-        placeholder="Kelime ara veya ayet referansı (örn: Yaratılış 1:1 veya tanrı)"
+        placeholder="Kelime ara veya referans (örn: Yaratılış 1:1 / Matta 1 / John 3:16)"
+        autocomplete="off"
       />
       <button class="btn btn-primary" onclick="performSearch()">Ara</button>
-      <button class="btn btn-secondary" onclick="getRandomVerse()">Rastgele Ayet</button>
+      <button class="btn btn-secondary" onclick="getRandomVerse()">Rastgele</button>
+      <button class="btn btn-secondary" onclick="loadInitialContent()">Reset</button>
     </div>
+
+    <!-- ✅ Optional tiny hint line (you can delete if you don’t want it) -->
+    <p style="margin-top:10px; opacity:0.75; font-size:0.95em;">
+      İpucu: <b>Matta 5:3-12</b>, <b>Yuhanna 3:16</b> veya metin araması. Qur’an için: <b>Bakara 2</b>, <b>Fatiha 1</b>.
+    </p>
   </div>
 
   <!-- RESULTS -->
