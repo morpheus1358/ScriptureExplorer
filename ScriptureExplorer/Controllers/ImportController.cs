@@ -108,6 +108,34 @@ namespace ScriptureExplorer.Controllers
             }
         }
 
+        [HttpPost("quran")]
+        public async Task<ActionResult<ImportResult>> ImportQuran(
+    [FromQuery] string fileName,
+    [FromQuery] string lang,
+    [FromQuery] string translationCode,
+    [FromQuery] bool force = false)
+        {
+            var path = Path.Combine(
+                Directory.GetCurrentDirectory(),
+                "Data",
+                fileName
+            );
+
+            var result = await _importService.ImportQuranPipeTextAsync(
+                path,
+                lang,
+                translationCode,
+                "QuranPipeText",
+                force
+            );
+
+            if (result.Success)
+                return Ok(result);
+
+            return BadRequest(result);
+        }
+
+
 
     }
 }

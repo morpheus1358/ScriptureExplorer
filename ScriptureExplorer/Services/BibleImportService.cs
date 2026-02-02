@@ -924,6 +924,116 @@ namespace ScriptureExplorer.Services
             }
         }
 
+        public async Task<ImportResult> ImportQuranPipeTextAsync(
+    string filePath,
+    string lang,
+    string translationCode,
+    string source,
+    bool force)
+        {
+            var result = new ImportResult();
+
+            if (!File.Exists(filePath))
+                return new ImportResult { Success = false, Message = "File not found." };
+
+            if (force)
+            {
+                await _context.VerseTranslations
+                    .Where(v => v.TranslationCode == translationCode)
+                    .ExecuteDeleteAsync();
+            }
+
+            using var reader = new StreamReader(filePath, Encoding.UTF8);
+
+            string? line;
+            while ((line = await reader.ReadLineAsync()) != null)
+            {
+                var parts = line.Split('|', 3);
+                if (parts.Length != 3) continue;
+
+                if (!int.TryParse(parts[0], out var surah)) continue;
+                if (!int.TryParse(parts[1], out var ayah)) continue;
+
+                var text = parts[2].Trim();
+                if (text.Length == 0) continue;
+
+                // BOOK (Surah)
+                var book = await _context.Books
+                    .FirstOrDefaultAsync(b =>
+                        b.Work == Work.Quran &&
+                        b.BookNumber == surah);
+
+                if (book == null)
+                {
+                    book = new Book
+                    {
+                        Work = Work.Quran,
+                        BookNumber = surah,
+                        Testament = Testament.Old
+                    };
+                    _context.Books.Add(book);
+                    await _context.SaveChangesAsync();
+                }
+
+                // CHAPTER (always 1)
+                var chapter = await _context.Chapters
+                    .FirstOrDefaultAsync(c =>
+                        c.BookId == book.Id &&
+                        c.ChapterNumber == 1);
+
+                if (chapter == null)
+                {
+                    chapter = new Chapter
+                    {
+                        BookId = book.Id,
+                        ChapterNumber = 1
+                    };
+                    _context.Chapters.Add(chapter);
+                    await _context.SaveChangesAsync();
+                }
+
+                // VERSE
+                var verse = await _context.Verses
+                    .FirstOrDefaultAsync(v =>
+                        v.ChapterId == chapter.Id &&
+                        v.VerseNumber == ayah);
+
+                if (verse == null)
+                {
+                    verse = new Verse
+                    {
+                        BookNumber = surah,
+                        ChapterNumber = 1,
+                        VerseNumber = ayah,
+                        ChapterId = chapter.Id
+                    };
+                    _context.Verses.Add(verse);
+                    await _context.SaveChangesAsync();
+                }
+
+                // TRANSLATION
+                if (!await _context.VerseTranslations.AnyAsync(v =>
+                    v.VerseId == verse.Id &&
+                    v.TranslationCode == translationCode))
+                {
+                    _context.VerseTranslations.Add(new VerseTranslation
+                    {
+                        VerseId = verse.Id,
+                        Lang = lang,
+                        TranslationCode = translationCode,
+                        Text = text,
+                        Source = source
+                    });
+                }
+            }
+
+            await _context.SaveChangesAsync();
+
+            result.Success = true;
+            result.Message = "Quran import completed.";
+            return result;
+        }
+
         private static string CleanGenericText(string text)
         {
             if (string.IsNullOrWhiteSpace(text)) return string.Empty;

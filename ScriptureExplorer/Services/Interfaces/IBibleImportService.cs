@@ -17,6 +17,14 @@ namespace ScriptureExplorer.Services.Interfaces
     string delimiter = ",",
     int skipLinesBeforeHeader = 0);
 
+        Task<ImportResult> ImportQuranPipeTextAsync(
+                string filePath,
+                string lang,
+                string translationCode,
+                string source,
+                bool forceReimport
+            );
+
 
         // ✅ match your controller + service (2 args)
         Task<ImportResult> ImportKjvBibleAsync(string filePath, bool forceReimport = false);
