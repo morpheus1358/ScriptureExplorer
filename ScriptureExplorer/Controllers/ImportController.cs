@@ -79,25 +79,35 @@ namespace ScriptureExplorer.Controllers
     [FromQuery] string delimiter = ",",
     [FromQuery] bool hasHeader = true)
         {
-            var csvPath = Path.Combine(
-                Directory.GetCurrentDirectory(),
-                "Data",
-                fileName
-            );
+            try
+            {
+                var csvPath = Path.Combine(Directory.GetCurrentDirectory(), "Data", fileName);
 
-            var result = await _importService.ImportBibleCsvAsync(
-                csvPath,
-                lang,
-                translationCode,
-                source,
-                forceReimport: force,
-                hasHeader: hasHeader,
-                delimiter: delimiter
-            );
+                var result = await _importService.ImportBibleCsvAsync(
+                    csvPath: csvPath,
+                    lang: lang,
+                    translationCode: translationCode,
+                    source: source,
+                    forceReimport: force,
+                    hasHeader: hasHeader,
+                    delimiter: delimiter,
+                    skipLinesBeforeHeader: 0
+                );
 
-            if (result.Success) return Ok(result);
-            return BadRequest(result);
+                if (result.Success) return Ok(result);
+                return BadRequest(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during CSV import via API");
+                return StatusCode(500, new ImportResult
+                {
+                    Success = false,
+                    Message = $"Internal server error: {ex.Message}"
+                });
+            }
         }
+
 
     }
 }

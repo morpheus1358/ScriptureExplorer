@@ -617,6 +617,45 @@ input[type="text"]:focus {
   }
 }
 
+/* Keep the header controls stable (don’t flip order when Arabic is selected) */
+.language-switch {
+  direction: ltr;            /* layout stays left-to-right */
+  unicode-bidi: plaintext;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Prevent mixed text like "Version: العربية" from re-ordering */
+.language-switch .lbl {
+  unicode-bidi: plaintext;
+}
+
+/* Default inputs/selects are LTR unless we set them */
+.language-switch select,
+.language-switch label {
+  direction: ltr;
+}
+
+/* If Arabic is active, only make the Arabic dropdowns RTL */
+body[data-lang="ar"] #languageSelect,
+body[data-lang="ar"] #translationSelect,
+body[data-lang="ar"] #secondaryLanguageSelect,
+body[data-lang="ar"] #secondaryTranslationSelect {
+  direction: rtl;
+  text-align: right;
+}
+
+/* Optional: make the Arabic options display nicer */
+body[data-lang="ar"] #languageSelect option,
+body[data-lang="ar"] #translationSelect option,
+body[data-lang="ar"] #secondaryLanguageSelect option,
+body[data-lang="ar"] #secondaryTranslationSelect option {
+  direction: rtl;
+}
+
+
 /* Responsive Design */
 @media (max-width: 992px) {
   .input-group {
