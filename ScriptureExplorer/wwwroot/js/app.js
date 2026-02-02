@@ -657,7 +657,7 @@ function setupEventListeners() {
 async function renderFromViewState() {
   try {
     if (viewState.view === 'search') {
-      await search(viewState.query || 'tanrı', { fromState: true });
+      await runSearch(viewState.query || 'tanrı', { fromState: true });
       return;
     }
 
@@ -669,7 +669,7 @@ async function renderFromViewState() {
 
     if (bn == null || c == null) {
       // fallback
-      await search('tanrı', { fromState: true });
+      await runSearch('tanrı', { fromState: true });
       return;
     }
 
@@ -694,7 +694,7 @@ async function renderFromViewState() {
       return;
     }
 
-    await search('tanrı', { fromState: true });
+    await runSearch('tanrı', { fromState: true });
   } catch (e) {
     console.error(e);
     showError(`${t('Gösterim hatası', 'Render error')}: ${e.message}`);
@@ -710,10 +710,11 @@ async function performSearch() {
     );
     return;
   }
-  await search(query);
+  await runSearch(query);
 }
 
-async function search(query, opts = {}) {
+// ✅ renamed internal search to avoid window.search recursion / browser collisions
+async function runSearch(query, opts = {}) {
   const rawQuery = (query || '').trim();
   const translatedQuery = translateQueryForCurrentLang(rawQuery);
 
@@ -747,7 +748,9 @@ async function search(query, opts = {}) {
     // 3) text search (auto-translated if Arabic)
     const code = currentTranslationCode || getTranslationCode(currentLang);
     const response = await fetch(
-      `${API_BASE}/search?q=${encodeURIComponent(translatedQuery)}&${buildQs(currentLang, code)}`,
+      `${API_BASE}/search?q=${encodeURIComponent(
+        translatedQuery,
+      )}&${buildQs(currentLang, code)}`,
     );
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
@@ -812,7 +815,10 @@ async function showVerseRange(bookName, chapterNumber, verseRange) {
 
 async function showVerseRangeByName(bookName, chapterNumber, verseRange) {
   showLoading(
-    `${bookName} ${chapterNumber}:${verseRange} ${t('yükleniyor...', 'loading...')}`,
+    `${bookName} ${chapterNumber}:${verseRange} ${t(
+      'yükleniyor...',
+      'loading...',
+    )}`,
   );
   setResultsDirSingleLang();
 
@@ -822,7 +828,9 @@ async function showVerseRangeByName(bookName, chapterNumber, verseRange) {
       currentTranslationCode || getTranslationCode(primaryLang);
 
     const primaryRes = await fetch(
-      `${API_BASE}/${encodeURIComponent(bookName)}/${chapterNumber}/${encodeURIComponent(verseRange)}?${buildQs(primaryLang, primaryCode)}`,
+      `${API_BASE}/${encodeURIComponent(bookName)}/${chapterNumber}/${encodeURIComponent(
+        verseRange,
+      )}?${buildQs(primaryLang, primaryCode)}`,
     );
     if (!primaryRes.ok)
       throw new Error(
@@ -854,7 +862,9 @@ async function showVerseRangeByName(bookName, chapterNumber, verseRange) {
     await showParallelRange(primaryVerses, bookName, chapterNumber, verseRange);
   } catch (e) {
     showError(
-      `${t('Ayet aralığı getirilemedi', 'Could not load verse range')}: ${e.message}`,
+      `${t('Ayet aralığı getirilemedi', 'Could not load verse range')}: ${
+        e.message
+      }`,
     );
   }
 }
@@ -866,7 +876,10 @@ async function showVerseRangeByNumber(
   fallbackBookName,
 ) {
   showLoading(
-    `${fallbackBookName || ''} ${chapterNumber}:${verseRange} ${t('yükleniyor...', 'loading...')}`,
+    `${fallbackBookName || ''} ${chapterNumber}:${verseRange} ${t(
+      'yükleniyor...',
+      'loading...',
+    )}`,
   );
   setResultsDirSingleLang();
 
@@ -876,9 +889,11 @@ async function showVerseRangeByNumber(
       currentTranslationCode || getTranslationCode(primaryLang);
 
     // NOTE: range endpoint by-number not provided by your backend; we load by chapter and slice.
-    // (This avoids name-mismatch across languages and makes state stable.)
     const primaryRes = await fetch(
-      `${API_BASE}/by-number/${bookNumber}/${chapterNumber}?${buildQs(primaryLang, primaryCode)}`,
+      `${API_BASE}/by-number/${bookNumber}/${chapterNumber}?${buildQs(
+        primaryLang,
+        primaryCode,
+      )}`,
     );
     if (!primaryRes.ok)
       throw new Error(
@@ -922,7 +937,9 @@ async function showVerseRangeByNumber(
     );
   } catch (e) {
     showError(
-      `${t('Ayet aralığı getirilemedi', 'Could not load verse range')}: ${e.message}`,
+      `${t('Ayet aralığı getirilemedi', 'Could not load verse range')}: ${
+        e.message
+      }`,
     );
   }
 }
@@ -955,7 +972,10 @@ async function showParallelRange(
   const secondaryCode =
     secondaryTranslationCode || getTranslationCode(secondaryLang);
   const secRes = await fetch(
-    `${API_BASE}/by-number/${bookNumber}/${chapterNumber}?${buildQs(secondaryLang, secondaryCode)}`,
+    `${API_BASE}/by-number/${bookNumber}/${chapterNumber}?${buildQs(
+      secondaryLang,
+      secondaryCode,
+    )}`,
   );
 
   let secondaryVerses = [];
@@ -994,7 +1014,10 @@ async function showChapter(bookName, chapterNumber) {
 
 async function showChapterByName(bookName, chapterNumber) {
   showLoading(
-    `${bookName} ${chapterNumber}. ${t('bölüm yükleniyor...', 'chapter loading...')}`,
+    `${bookName} ${chapterNumber}. ${t(
+      'bölüm yükleniyor...',
+      'chapter loading...',
+    )}`,
   );
   setResultsDirSingleLang();
 
@@ -1004,7 +1027,10 @@ async function showChapterByName(bookName, chapterNumber) {
       currentTranslationCode || getTranslationCode(primaryLang);
 
     const res = await fetch(
-      `${API_BASE}/${encodeURIComponent(bookName)}/${chapterNumber}?${buildQs(primaryLang, primaryCode)}`,
+      `${API_BASE}/${encodeURIComponent(bookName)}/${chapterNumber}?${buildQs(
+        primaryLang,
+        primaryCode,
+      )}`,
     );
     if (!res.ok)
       throw new Error(t('Bölüm getirilemedi', 'Could not load chapter'));
@@ -1042,7 +1068,10 @@ async function showChapterByNumber(
   fallbackBookName,
 ) {
   showLoading(
-    `${fallbackBookName || ''} ${chapterNumber}. ${t('bölüm yükleniyor...', 'chapter loading...')}`,
+    `${fallbackBookName || ''} ${chapterNumber}. ${t(
+      'bölüm yükleniyor...',
+      'chapter loading...',
+    )}`,
   );
   setResultsDirSingleLang();
 
@@ -1052,7 +1081,10 @@ async function showChapterByNumber(
       currentTranslationCode || getTranslationCode(primaryLang);
 
     const res = await fetch(
-      `${API_BASE}/by-number/${bookNumber}/${chapterNumber}?${buildQs(primaryLang, primaryCode)}`,
+      `${API_BASE}/by-number/${bookNumber}/${chapterNumber}?${buildQs(
+        primaryLang,
+        primaryCode,
+      )}`,
     );
     if (!res.ok)
       throw new Error(t('Bölüm getirilemedi', 'Could not load chapter'));
@@ -1114,7 +1146,10 @@ async function showParallelChapter(
   const secondaryCode =
     secondaryTranslationCode || getTranslationCode(secondaryLang);
   const secRes = await fetch(
-    `${API_BASE}/by-number/${bookNumber}/${chapterNumber}?${buildQs(secondaryLang, secondaryCode)}`,
+    `${API_BASE}/by-number/${bookNumber}/${chapterNumber}?${buildQs(
+      secondaryLang,
+      secondaryCode,
+    )}`,
   );
 
   let secondaryVerses = [];
@@ -1155,7 +1190,10 @@ async function showVerseContextByName(bookName, chapterNumber, verseNumber) {
     const code = currentTranslationCode || getTranslationCode(lang);
 
     const response = await fetch(
-      `${API_BASE}/${encodeURIComponent(bookName)}/${chapterNumber}?${buildQs(lang, code)}`,
+      `${API_BASE}/${encodeURIComponent(bookName)}/${chapterNumber}?${buildQs(
+        lang,
+        code,
+      )}`,
     );
     if (!response.ok)
       throw new Error(t('Ayet bağlamı getirilemedi', 'Could not load context'));
@@ -1298,7 +1336,10 @@ function displayResults(verses, title) {
 
   resultsDiv.innerHTML = `
     <div class="results-header">
-      ${escapeHtml(title)} • ${Array.isArray(verses) ? verses.length : 0} ${t('sonuç', 'results')}
+      ${escapeHtml(title)} • ${Array.isArray(verses) ? verses.length : 0} ${t(
+        'sonuç',
+        'results',
+      )}
     </div>
   `;
 
@@ -1316,13 +1357,21 @@ function createVerseElement(verse) {
 
   verseElement.innerHTML = `
     <div class="verse-reference">
-      ${escapeHtml(verse.bookName)} ${escapeHtml(String(verse.chapterNumber))}:${escapeHtml(String(verse.verseNumber))}
+      ${escapeHtml(verse.bookName)} ${escapeHtml(
+        String(verse.chapterNumber),
+      )}:${escapeHtml(String(verse.verseNumber))}
     </div>
     <div class="verse-text">${escapeHtml(verse.text || '')}</div>
 
     <div class="verse-actions">
-      <button class="btn-small btn-success js-read-chapter">📚 ${t('Tüm Bölümü Oku', 'Read Chapter')}</button>
-      <button class="btn-small btn-warning js-view-context">🔍 ${t('Bağlamında Gör', 'View Context')}</button>
+      <button class="btn-small btn-success js-read-chapter">📚 ${t(
+        'Tüm Bölümü Oku',
+        'Read Chapter',
+      )}</button>
+      <button class="btn-small btn-warning js-view-context">🔍 ${t(
+        'Bağlamında Gör',
+        'View Context',
+      )}</button>
     </div>
   `;
 
@@ -1351,18 +1400,23 @@ function displayChapterView(verses, bookName, chapterNumber) {
   resultsDiv.innerHTML = `
     <div class="chapter-header">
       <h2 class="chapter-title">
-        ${bdiWrap(escapeHtml(bookName))} <span class="chapter-num">${escapeHtml(String(chapterNumber))}</span>
+        ${bdiWrap(escapeHtml(bookName))} <span class="chapter-num">${escapeHtml(
+          String(chapterNumber),
+        )}</span>
       </h2>
-      <button class="btn btn-primary" id="backToSearchBtn">← ${t("Arama'ya Dön", 'Back to Search')}</button>
+      <button class="btn btn-primary" id="backToSearchBtn">← ${t(
+        "Arama'ya Dön",
+        'Back to Search',
+      )}</button>
     </div>
 
     <div class="chapter-content">
       ${uniqueVerses
         .map(
           (v) => `
-          <div class="verse-in-chapter" data-verse="${escapeHtml(String(v.verseNumber))}" id="verse-${escapeHtml(
+          <div class="verse-in-chapter" data-verse="${escapeHtml(
             String(v.verseNumber),
-          )}">
+          )}" id="verse-${escapeHtml(String(v.verseNumber))}">
             <span class="verse-number">${escapeHtml(String(v.verseNumber))}</span>
             <span class="verse-text">${escapeHtml(v.text || '')}</span>
           </div>
@@ -1371,12 +1425,17 @@ function displayChapterView(verses, bookName, chapterNumber) {
         .join('')}
     </div>
 
-    <button id="prevChapterArrow" class="chapter-nav-arrow left" aria-label="${t('Önceki bölüm', 'Previous chapter')}">‹</button>
-    <button id="nextChapterArrow" class="chapter-nav-arrow right" aria-label="${t('Sonraki bölüm', 'Next chapter')}">›</button>
+    <button id="prevChapterArrow" class="chapter-nav-arrow left" aria-label="${t(
+      'Önceki bölüm',
+      'Previous chapter',
+    )}">‹</button>
+    <button id="nextChapterArrow" class="chapter-nav-arrow right" aria-label="${t(
+      'Sonraki bölüm',
+      'Next chapter',
+    )}">›</button>
   `;
 
   document.getElementById('backToSearchBtn')?.addEventListener('click', () => {
-    // go back to last search query if we have it; else tanrı
     viewState = {
       view: 'search',
       query: viewState.query || 'tanrı',
@@ -1409,19 +1468,29 @@ function displayContextView(verses, bookName, chapterNumber, targetVerse) {
   resultsDiv.innerHTML = `
     <div class="context-header">
       <h2 class="context-title">
-        ${bdiWrap(escapeHtml(bookName))} ${escapeHtml(String(chapterNumber))}:${escapeHtml(String(targetVerse))}
+        ${bdiWrap(escapeHtml(bookName))} ${escapeHtml(
+          String(chapterNumber),
+        )}:${escapeHtml(String(targetVerse))}
         — ${t('Bağlam', 'Context')}
       </h2>
 
-      <button class="btn btn-primary" id="backToSearchBtn2">← ${t("Arama'ya Dön", 'Back to Search')}</button>
-      <button class="btn btn-secondary" id="readFullChapterBtn">${t('Tüm Bölümü Oku', 'Read Full Chapter')}</button>
+      <button class="btn btn-primary" id="backToSearchBtn2">← ${t(
+        "Arama'ya Dön",
+        'Back to Search',
+      )}</button>
+      <button class="btn btn-secondary" id="readFullChapterBtn">${t(
+        'Tüm Bölümü Oku',
+        'Read Full Chapter',
+      )}</button>
     </div>
 
     <div class="context-content">
       ${unique
         .map(
           (v) => `
-          <div class="verse-in-context ${v.verseNumber === targetVerse ? 'highlighted-verse' : ''}"
+          <div class="verse-in-context ${
+            v.verseNumber === targetVerse ? 'highlighted-verse' : ''
+          }"
                data-verse="${escapeHtml(String(v.verseNumber))}"
                id="verse-${escapeHtml(String(v.verseNumber))}">
             <span class="verse-number">${escapeHtml(String(v.verseNumber))}</span>
@@ -1460,9 +1529,10 @@ function displayContextView(verses, bookName, chapterNumber, targetVerse) {
   wireContextCopyActions(bookNumber, bookName, chapterNumber);
 
   setTimeout(() => {
-    document
-      .getElementById(`verse-${targetVerse}`)
-      ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document.getElementById(`verse-${targetVerse}`)?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center',
+    });
   }, 80);
 }
 
@@ -2103,8 +2173,15 @@ function logout() {
 
 // -------------------- Expose globals used by HTML --------------------
 window.performSearch = performSearch;
-window.search = (q) => search(q);
+
+// ✅ HTML uses window.search('...'), internal function is runSearch (no recursion)
+window.search = runSearch;
+
 window.getRandomVerse = getRandomVerse;
 window.showChapter = showChapter;
 window.showVerseContext = showVerseContext;
 window.loadInitialContent = loadInitialContent;
+
+window.login = login;
+window.registerUser = registerUser;
+window.logout = logout;
